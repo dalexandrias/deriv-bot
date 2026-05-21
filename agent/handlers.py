@@ -26,40 +26,43 @@ class ToolHandlers:
         self._last_analysis = result
         return result
 
-    async def emit_signal(self, direction: str, confidence: float, justification: str) -> dict:
-        """Emit a Rise/Fall signal and schedule verification."""
-        quote_entry = await market.get_tick(self.client, self.config["symbol"])
+    async def emit_signal(self, direction: str, confidence: float, reason: str = "") -> dict:
+        """Emit a Rise/Fall/SEM_SINAL signal and schedule verification if not aborted."""
+        quote_entry = await market.get_tick(self.client, self.config["symbol"]) if direction != "SEM_SINAL" else None
 
         signal = Signal(
             created_at=datetime.utcnow().isoformat(),
             symbol=self.config["symbol"],
             direction=direction,
             confidence=confidence,
-            justification=justification,
+            reason=reason,
             duration=int(self.config["duration"]),
             timeframe=self.config["timeframe"],
             rsi=self._last_analysis.get("rsi") if self._last_analysis else None,
-            macd_signal=self._last_analysis.get("macd_signal") if self._last_analysis else None,
-            trend=self._last_analysis.get("trend") if self._last_analysis else None,
             bb_position=self._last_analysis.get("bb_position") if self._last_analysis else None,
+            adx=self._last_analysis.get("adx") if self._last_analysis else None,
+            atr_pct=self._last_analysis.get("atr_pct") if self._last_analysis else None,
+            price_vs_ema50=self._last_analysis.get("price_vs_ema50") if self._last_analysis else None,
             quote_entry=quote_entry,
+            status="aborted" if direction == "SEM_SINAL" else "pending",
         )
 
         signal_id = self.repo.insert(signal)
 
-        asyncio.create_task(
-            verifier.resolve(
-                self.client, self.repo, signal_id, quote_entry,
-                direction, self.config["symbol"], int(self.config["duration"])
+        if direction != "SEM_SINAL":
+            asyncio.create_task(
+                verifier.resolve(
+                    self.client, self.repo, signal_id, quote_entry,
+                    direction, self.config["symbol"], int(self.config["duration"])
+                )
             )
-        )
 
+        status_str = "ABORTED" if direction == "SEM_SINAL" else "EMITTED"
         logger.info(
-            f"SIGNAL #{signal_id} | {direction} | {self.config['symbol']} "
-            f"| entry={quote_entry} | dur={self.config['duration']}s "
-            f"| conf={confidence:.0%} | {justification}"
+            f"SIGNAL #{signal_id} | {direction} | {status_str} | {self.config['symbol']} "
+            f"| conf={confidence:.0%}" + (f" | {reason}" if reason else "")
         )
-        return {"status": "signal_emitted", "signal_id": signal_id, "direction": direction}
+        return {"status": "signal_" + ("aborted" if direction == "SEM_SINAL" else "emitted"), "signal_id": signal_id, "direction": direction}
 
     async def dispatch(self, name: str, args: dict) -> dict:
         fn = getattr(self, name, None)

@@ -23,13 +23,14 @@ class SignalRepository:
                 symbol        TEXT NOT NULL,
                 direction     TEXT NOT NULL,
                 confidence    REAL NOT NULL,
-                justification TEXT NOT NULL,
+                reason        TEXT NOT NULL DEFAULT '',
                 duration      INTEGER NOT NULL,
                 timeframe     TEXT NOT NULL,
                 rsi           REAL,
-                macd_signal   TEXT,
-                trend         TEXT,
                 bb_position   TEXT,
+                adx           REAL,
+                atr_pct       REAL,
+                price_vs_ema50 TEXT,
                 quote_entry   REAL,
                 quote_exit    REAL,
                 outcome       TEXT,
@@ -44,15 +45,15 @@ class SignalRepository:
             cursor = conn.cursor()
             cursor.execute("""
             INSERT INTO signals (
-                created_at, symbol, direction, confidence, justification,
-                duration, timeframe, rsi, macd_signal, trend, bb_position,
-                quote_entry, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, symbol, direction, confidence, reason,
+                duration, timeframe, rsi, bb_position, adx, atr_pct,
+                price_vs_ema50, quote_entry, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 signal.created_at, signal.symbol, signal.direction,
-                signal.confidence, signal.justification, signal.duration,
-                signal.timeframe, signal.rsi, signal.macd_signal,
-                signal.trend, signal.bb_position, signal.quote_entry,
+                signal.confidence, signal.reason, signal.duration,
+                signal.timeframe, signal.rsi, signal.bb_position, signal.adx,
+                signal.atr_pct, signal.price_vs_ema50, signal.quote_entry,
                 signal.status
             ))
             conn.commit()
@@ -131,21 +132,30 @@ class SignalRepository:
         return [self._row_to_signal(row) for row in rows]
 
     def get_pattern_stats(self) -> list[dict]:
-        """Fetch win rates by pattern (direction, trend, macd_signal)."""
+        """Fetch win rates by pattern (direction, rsi_bucket, adx_bucket)."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            # Define buckets for RSI and ADX
             cursor.execute("""
             SELECT
                 direction,
-                trend,
-                macd_signal,
+                CASE
+                    WHEN rsi < 30 THEN 'oversold'
+                    WHEN rsi > 70 THEN 'overbought'
+                    ELSE 'neutral'
+                END AS rsi_bucket,
+                CASE
+                    WHEN adx < 20 THEN 'weak'
+                    WHEN adx <= 25 THEN 'moderate'
+                    ELSE 'strong'
+                END AS adx_bucket,
                 COUNT(*) AS total,
                 SUM(CASE WHEN outcome='win' THEN 1 ELSE 0 END) AS wins,
                 ROUND(SUM(CASE WHEN outcome='win' THEN 1 ELSE 0 END) * 1.0 / COUNT(*), 2) AS win_rate
             FROM signals
             WHERE status = 'resolved'
-            GROUP BY direction, trend, macd_signal
+            GROUP BY direction, rsi_bucket, adx_bucket
             HAVING total >= 3
             ORDER BY win_rate DESC
             """)
@@ -160,13 +170,14 @@ class SignalRepository:
             symbol=row["symbol"],
             direction=row["direction"],
             confidence=row["confidence"],
-            justification=row["justification"],
+            reason=row["reason"],
             duration=row["duration"],
             timeframe=row["timeframe"],
             rsi=row["rsi"],
-            macd_signal=row["macd_signal"],
-            trend=row["trend"],
             bb_position=row["bb_position"],
+            adx=row["adx"],
+            atr_pct=row["atr_pct"],
+            price_vs_ema50=row["price_vs_ema50"],
             quote_entry=row["quote_entry"],
             quote_exit=row["quote_exit"],
             outcome=row["outcome"],

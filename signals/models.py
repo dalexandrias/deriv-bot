@@ -7,15 +7,16 @@ class Signal:
     id: int | None = None
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     symbol: str = "R_100"
-    direction: str = "CALL"  # "CALL" | "PUT"
+    direction: str = "CALL"  # "CALL" | "PUT" | "SEM_SINAL"
     confidence: float = 0.5  # 0.0–1.0
-    justification: str = ""
+    reason: str = ""  # optional one-line reason for audit
     duration: int = 5  # seconds
     timeframe: str = "1m"
     rsi: float | None = None
-    macd_signal: str | None = None  # "compra" | "venda"
-    trend: str | None = None  # "alta" | "baixa" | "lateral"
-    bb_position: str | None = None
+    bb_position: str | None = None  # "acima" | "dentro" | "abaixo"
+    adx: float | None = None
+    atr_pct: float | None = None
+    price_vs_ema50: str | None = None  # "acima" | "abaixo"
     quote_entry: float | None = None
     quote_exit: float | None = None
     outcome: str | None = None  # "win" | "loss"

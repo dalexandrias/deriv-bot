@@ -1,7 +1,7 @@
 import pandas as pd
 from ta.momentum import RSIIndicator
-from ta.trend import MACD, SMAIndicator
-from ta.volatility import BollingerBands
+from ta.trend import EMAIndicator, ADXIndicator
+from ta.volatility import BollingerBands, AverageTrueRange
 
 
 def analyze(candles: list[dict]) -> dict:
@@ -14,6 +14,7 @@ def analyze(candles: list[dict]) -> dict:
 
     close = df["close"]
 
+    # RSI-14 (único oscilador de momentum)
     rsi_series = RSIIndicator(close=close, window=14).rsi()
     rsi = float(rsi_series.iloc[-1]) if not rsi_series.empty else float("nan")
     if pd.isna(rsi):
@@ -25,12 +26,7 @@ def analyze(candles: list[dict]) -> dict:
     else:
         rsi_signal = "neutro"
 
-    macd_obj = MACD(close=close)
-    macd_line = macd_obj.macd().iloc[-1]
-    macd_sig_line = macd_obj.macd_signal().iloc[-1]
-    macd_val = float(macd_line) if not pd.isna(macd_line) else 0.0
-    macd_signal = "compra" if macd_line > macd_sig_line else "venda"
-
+    # Bollinger Bands (envelope de volatilidade)
     bb = BollingerBands(close=close, window=20, window_dev=2)
     bb_upper = float(bb.bollinger_hband().iloc[-1])
     bb_lower = float(bb.bollinger_lband().iloc[-1])
@@ -42,27 +38,33 @@ def analyze(candles: list[dict]) -> dict:
     else:
         bb_position = "dentro"
 
-    sma_short = SMAIndicator(close=close, window=min(5, len(close))).sma_indicator().iloc[-1]
-    sma_long_window = min(20, len(close))
-    sma_long = SMAIndicator(close=close, window=sma_long_window).sma_indicator().iloc[-1]
-    if pd.isna(sma_short) or pd.isna(sma_long):
-        trend = "lateral"
-    elif sma_short > sma_long * 1.0005:
-        trend = "alta"
-    elif sma_short < sma_long * 0.9995:
-        trend = "baixa"
-    else:
-        trend = "lateral"
+    # EMA-50 (filtro de tendência)
+    ema50_series = EMAIndicator(close=close, window=50).ema_indicator()
+    ema50 = float(ema50_series.iloc[-1]) if not ema50_series.empty else last_close
+    price_vs_ema50 = "acima" if last_close > ema50 else "abaixo"
+
+    # ADX-14 (força da tendência, valor bruto)
+    adx_indicator = ADXIndicator(high=df["high"], low=df["low"], close=close, window=14)
+    adx_series = adx_indicator.adx()
+    adx = float(adx_series.iloc[-1]) if not adx_series.empty else 20.0
+
+    # ATR-14 (volatilidade)
+    atr_indicator = AverageTrueRange(high=df["high"], low=df["low"], close=close, window=14)
+    atr_series = atr_indicator.average_true_range()
+    atr = float(atr_series.iloc[-1]) if not atr_series.empty else 0.0
+    atr_pct = (atr / last_close * 100) if last_close != 0 else 0.0
 
     return {
-        "trend": trend,
+        "last_close": round(last_close, 5),
+        "candles_count": len(candles),
         "rsi": round(rsi, 2),
         "rsi_signal": rsi_signal,
-        "macd": round(macd_val, 6),
-        "macd_signal": macd_signal,
         "bb_upper": round(bb_upper, 5),
         "bb_lower": round(bb_lower, 5),
         "bb_position": bb_position,
-        "last_close": round(last_close, 5),
-        "candles_count": len(candles),
+        "ema50": round(ema50, 5),
+        "price_vs_ema50": price_vs_ema50,
+        "adx": round(adx, 2),
+        "atr": round(atr, 5),
+        "atr_pct": round(atr_pct, 2),
     }

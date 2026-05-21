@@ -3,7 +3,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_market_analysis",
-            "description": "Busca candles recentes e retorna análise técnica completa com RSI, MACD e Bollinger Bands",
+            "description": "Busca candles recentes e retorna análise técnica: RSI, Bollinger Bands, EMA-50, ADX-14 (força da tendência), ATR-14 (volatilidade)",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -19,15 +19,15 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "emit_signal",
-            "description": "Emits a Rise (CALL) or Fall (PUT) signal for R_100. Use when indicators are aligned.",
+            "description": "Emits a Rise (CALL), Fall (PUT), or NO_SIGNAL (SEM_SINAL) decision. Confidence should reflect real perceived probability.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "direction":     {"type": "string", "enum": ["CALL", "PUT"]},
-                    "confidence":    {"type": "number", "description": "Confidence 0.0–1.0"},
-                    "justification": {"type": "string", "description": "Reason based on indicators"},
+                    "direction":  {"type": "string", "enum": ["CALL", "PUT", "SEM_SINAL"]},
+                    "confidence": {"type": "number", "description": "0.0–1.0; must reflect real perceived probability. Never 1.0."},
+                    "reason":     {"type": "string", "description": "Optional one-line reason for audit only; not processed by logic"},
                 },
-                "required": ["direction", "confidence", "justification"],
+                "required": ["direction", "confidence"],
             },
         },
     },
