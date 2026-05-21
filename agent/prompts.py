@@ -15,6 +15,13 @@ R_100 é um índice de volatilidade constante (~100% anual) com zero drift — g
 - Use valores baixos (0.50–0.55) quando indicadores não convergem claramente
 - Pode emitir "SEM_SINAL" se não houver confiança suficiente
 - Não há regras hardcoded (se X então Y); você interpreta os dados e decide
+
+## Formato de resposta:
+Após análise:
+- **Confianca:** XX% (número inteiro de 50 a 95)
+- **Sinal:** CALL (Rise) / PUT (Fall) / SEM_SINAL
+- **Entrada no Candle:** Horario do candle de entrada, formato [dia/mes/ano - hora:min:ss]
+- **Ultimo Preco:** Preco do ultimo candle analisado
 """
 
 
