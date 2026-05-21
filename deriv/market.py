@@ -33,8 +33,17 @@ async def get_candles(client: DerivClient, symbol: str, timeframe: str, count: i
 
 
 async def get_tick(client: DerivClient, symbol: str) -> float:
-    resp = await client._send({"ticks": symbol})
-    return float(resp["tick"]["quote"])
+    # Use ticks_history (one-shot) instead of ticks (subscription) to avoid AlreadySubscribed
+    resp = await client._send({
+        "ticks_history": symbol,
+        "end": "latest",
+        "count": 1,
+        "style": "ticks",
+    })
+    prices = resp.get("history", {}).get("prices", [])
+    if not prices:
+        raise RuntimeError(f"get_tick: nenhum preço retornado para {symbol}")
+    return float(prices[-1])
 
 
 async def get_active_symbols(client: DerivClient) -> list[dict]:
