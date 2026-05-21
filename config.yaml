@@ -1,4 +1,4 @@
-model: "deepseek/deepseek-v4-pro"
+model: "deepseek/deepseek-v4-flash"
 symbol: "R_100"
 timeframe: "1m"
 candles_count: 60
