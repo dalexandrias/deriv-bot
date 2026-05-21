@@ -1,0 +1,8 @@
+model: "openai/gpt-4o"
+symbol: "R_100"
+timeframe: "1m"
+candles_count: 20
+duration: 5
+loop_interval: 60
+learning_history_size: 20
+db_path: "data/signals.db"
