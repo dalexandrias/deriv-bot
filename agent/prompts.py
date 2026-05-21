@@ -8,7 +8,6 @@ R_100 é um índice de volatilidade constante (~100% anual) com zero drift — g
 2. Consulte o bloco de aprendizado injetado — padrões com win_rate ≥60% são favoráveis; <40% desfavoráveis
 3. Analise os dados brutos retornados (RSI, ADX, ATR, Bollinger Bands, EMA-50)
 4. Declare sua confiança real (0.5–0.95; nunca 1.0) e a direção (CALL ou PUT) via `emit_signal`
-5. Opcionalmente, cite uma razão breve (uma linha) para auditoria — não será processada pela lógica
 
 ## Importante:
 - Sua confiança deve refletir a probabilidade percebida da previsão estar correta
