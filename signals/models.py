@@ -21,6 +21,8 @@ class Signal:
     quote_exit: float | None = None
     outcome: str | None = None  # "win" | "loss"
     status: str = "pending"  # "pending" | "resolved" | "aborted"
+    last_candle_epoch: float | None = None  # epoch do último candle analisado
+    entry_candle_time: str | None = None  # horário ISO do candle de entrada calculado
 
 
 @dataclass

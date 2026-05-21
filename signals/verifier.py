@@ -12,6 +12,7 @@ async def resolve(
     direction: str,
     symbol: str,
     duration: int,
+    entry_candle_time: str | None = None,
 ) -> None:
     """
     Async task that waits for signal duration, fetches exit price,
@@ -23,6 +24,21 @@ async def resolve(
             logger.error(f"Invalid duration {duration} for signal #{signal_id}")
             return
 
+        # Se temos entry_candle_time, aguardar até o momento correto
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+
+        if entry_candle_time:
+            entry_dt = datetime.fromisoformat(entry_candle_time.replace('Z', '+00:00'))
+            entry_ts = entry_dt.timestamp()
+            now_ts = now.timestamp()
+            wait_time = entry_ts - now_ts
+
+            if wait_time > 0:
+                logger.info(f"Verifier #{signal_id}: Aguardando {wait_time:.1f}s até o candle de entrada")
+                await asyncio.sleep(wait_time)
+
+        # Esperar pela duração do sinal (após a entrada)
         await asyncio.sleep(duration)
 
         # Fetch exit quote with validation

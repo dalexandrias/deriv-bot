@@ -34,9 +34,21 @@ class SignalRepository:
                 quote_entry   REAL,
                 quote_exit    REAL,
                 outcome       TEXT,
-                status        TEXT NOT NULL DEFAULT 'pending'
+                status        TEXT NOT NULL DEFAULT 'pending',
+                last_candle_epoch REAL,
+                entry_candle_time TEXT
             )
             """)
+
+            # SQLite doesn't support "IF NOT EXISTS" in some versions
+            try:
+                cursor.execute("ALTER TABLE signals ADD COLUMN last_candle_epoch REAL")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            try:
+                cursor.execute("ALTER TABLE signals ADD COLUMN entry_candle_time TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             conn.commit()
 
     def insert(self, signal: Signal) -> int:
@@ -47,14 +59,16 @@ class SignalRepository:
             INSERT INTO signals (
                 created_at, symbol, direction, confidence, reason,
                 duration, timeframe, rsi, bb_position, adx, atr_pct,
-                price_vs_ema50, quote_entry, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                price_vs_ema50, quote_entry, status, last_candle_epoch,
+                entry_candle_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 signal.created_at, signal.symbol, signal.direction,
                 signal.confidence, signal.reason, signal.duration,
                 signal.timeframe, signal.rsi, signal.bb_position, signal.adx,
                 signal.atr_pct, signal.price_vs_ema50, signal.quote_entry,
-                signal.status
+                signal.status, signal.last_candle_epoch,
+                signal.entry_candle_time
             ))
             conn.commit()
             return cursor.lastrowid
@@ -186,4 +200,6 @@ class SignalRepository:
             quote_exit=row["quote_exit"],
             outcome=row["outcome"],
             status=row["status"],
+            last_candle_epoch=row["last_candle_epoch"],
+            entry_candle_time=row["entry_candle_time"],
         )

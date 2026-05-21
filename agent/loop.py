@@ -46,7 +46,9 @@ async def run_agent(client: DerivClient, config: dict, repo: SignalRepository) -
     handlers = ToolHandlers(client, config, repo)
     learning_block = build_context_block(repo, config)
     system_prompt = build_system_prompt(config)
-    user_msg = build_user_context(config, learning_block)
+    # Passar o epoch do último candle para o contexto do LLM
+    last_candle_epoch = getattr(handlers, '_last_candle_epoch', None)
+    user_msg = build_user_context(config, learning_block, last_candle_epoch)
 
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},

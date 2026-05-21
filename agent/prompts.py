@@ -28,7 +28,7 @@ def build_system_prompt(config: dict) -> str:
     return SYSTEM_PROMPT_TEMPLATE
 
 
-def build_user_context(config: dict, learning_block: str = "") -> str:
+def build_user_context(config: dict, learning_block: str = "", last_candle_epoch: float | None = None) -> str:
     base = (
         f"Ciclo de análise iniciado.\n"
         f"Ativo: {config['symbol']}\n"
@@ -36,6 +36,24 @@ def build_user_context(config: dict, learning_block: str = "") -> str:
         f"Candles: {config.get('candles_count', 20)}\n"
         f"Duração do sinal: {config['duration']}s\n"
     )
+
+    # Adicionar contexto temporal
+    if last_candle_epoch:
+        from datetime import datetime, UTC, timezone
+        # Convert epoch para datetime UTC
+        last_candle_dt = datetime.fromtimestamp(last_candle_epoch / 1000, tz=timezone.utc)
+        # Calcular próximo candle
+        next_candle_epoch = last_candle_epoch + 60000  # + 60 segundos em ms
+        next_candle_dt = datetime.fromtimestamp(next_candle_epoch / 1000, tz=timezone.utc)
+        # Horário atual
+        now = datetime.now(timezone.utc)
+
+        base += (
+            f"\nTimestamp atual: {now.strftime('%d/%m/%Y - %H:%M:%S')} UTC\n"
+            f"Último candle analisado: {last_candle_dt.strftime('%d/%m/%Y - %H:%M:%S')} UTC\n"
+            f"Entrada no próximo candle: {next_candle_dt.strftime('%d/%m/%Y - %H:%M:%S')} UTC"
+        )
+
     if learning_block:
         base += f"\n{learning_block}\n"
     base += (
