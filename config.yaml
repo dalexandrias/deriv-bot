@@ -1,4 +1,4 @@
-model: "openai/gpt-4o"
+model: "deepseek/deepseek-v4-pro"
 symbol: "R_100"
 timeframe: "1m"
 candles_count: 20
