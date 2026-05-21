@@ -85,6 +85,8 @@ class SignalRepository:
         alive = []
         for row in rows:
             created = datetime.fromisoformat(row["created_at"])
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             elapsed = (now - created).total_seconds()
             if elapsed < row["duration"]:
                 alive.append(self._row_to_signal(row))
@@ -103,6 +105,8 @@ class SignalRepository:
         expired = []
         for row in rows:
             created = datetime.fromisoformat(row["created_at"])
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             elapsed = (now - created).total_seconds()
             if elapsed >= row["duration"]:
                 expired.append(self._row_to_signal(row))

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, UTC
 from deriv.client import DerivClient
 from deriv import market, trading
 from indicators.technical import analyze
@@ -31,7 +31,7 @@ class ToolHandlers:
         quote_entry = await market.get_tick(self.client, self.config["symbol"]) if direction != "SEM_SINAL" else None
 
         signal = Signal(
-            created_at=datetime.utcnow().isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             symbol=self.config["symbol"],
             direction=direction,
             confidence=confidence,
