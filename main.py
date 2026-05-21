@@ -58,6 +58,7 @@ async def main() -> None:
 
     try:
         while True:
+            await client.ensure_connected()
             try:
                 await run_agent(client, config, repo)
             except Exception as e:

@@ -43,6 +43,13 @@ class DerivClient:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 8)
 
+    async def ensure_connected(self) -> None:
+        """Reconnect if the WebSocket is no longer open."""
+        if not self.is_connected:
+            logger.info("WS desconectado — reconectando antes do próximo ciclo.")
+            self._stop = False
+            await self.connect()
+
     async def close(self) -> None:
         self._stop = True
         if self._listener_task:
@@ -75,16 +82,22 @@ class DerivClient:
                 await self.connect()
 
     async def _send(self, payload: dict, timeout: float = 30.0) -> dict:
-        if self._ws is None:
-            raise DerivError("WebSocket não conectado")
+        if not self.is_connected:
+            await self.ensure_connected()
         req_id = next(self._req_id_counter)
         payload = {**payload, "req_id": req_id}
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
         self._pending[req_id] = fut
-        async with self._lock:
-            logger.debug(f"WS>>> {payload}")
-            await self._ws.send(json.dumps(payload))
+        try:
+            async with self._lock:
+                logger.debug(f"WS>>> {payload}")
+                await self._ws.send(json.dumps(payload))
+        except (websockets.ConnectionClosed, DerivError) as e:
+            self._pending.pop(req_id, None)
+            logger.warning(f"WS caiu durante send ({e}) — reconectando e retentando.")
+            await self.ensure_connected()
+            return await self._send(payload, timeout=timeout)
         try:
             resp = await asyncio.wait_for(fut, timeout=timeout)
         except asyncio.TimeoutError:
