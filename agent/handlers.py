@@ -26,22 +26,22 @@ class ToolHandlers:
 
         # Armazenar o epoch do último candle para cálculo da entrada
         if candles:
-            self._last_candle_epoch = candles[-1]["time"]  # última posição = último candle
+            self._last_candle_epoch = candles[-1]["time"]  # já em segundos (Deriv API)
             # Calcular horário do próximo candle (próximo múltiplo de 60s)
             from datetime import datetime, UTC, timezone
-            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            now = datetime.now(timezone.utc).timestamp()
             # Encontrar o próximo múltiplo de 60s após o último candle
-            last_candle_seconds = self._last_candle_epoch / 1000
+            last_candle_seconds = self._last_candle_epoch
             # Arredondar para cima até o próximo minuto completo
             seconds_in_minute = 60
             next_epoch_seconds = (
                 (int(last_candle_seconds / seconds_in_minute) + 1) * seconds_in_minute
             )
             # Se já passou, ir para o próximo minuto
-            while next_epoch_seconds < now_ms / 1000:
+            while next_epoch_seconds < now:
                 next_epoch_seconds += seconds_in_minute
 
-            self._entry_candle_epoch = next_epoch_seconds * 1000  # volta para ms
+            self._entry_candle_epoch = next_epoch_seconds
         else:
             self._last_candle_epoch = None
             self._entry_candle_epoch = None
@@ -57,13 +57,13 @@ class ToolHandlers:
         # Calcular o horário exato de entrada
         if self._entry_candle_epoch is not None:
             from datetime import datetime, UTC, timezone
-            entry_candle_time = datetime.fromtimestamp(self._entry_candle_epoch / 1000, tz=timezone.utc).isoformat()
+            entry_candle_time = datetime.fromtimestamp(self._entry_candle_epoch, tz=timezone.utc).isoformat()
             # Se já passou do horário de entrada, recalcular para o próximo candle
-            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-            if self._entry_candle_epoch < now_ms:
-                # Avançar para o próximo minuto
-                self._entry_candle_epoch = int((self._entry_candle_epoch / 60000) + 1) * 60000
-                entry_candle_time = datetime.fromtimestamp(self._entry_candle_epoch / 1000, tz=timezone.utc).isoformat()
+            now = datetime.now(timezone.utc).timestamp()
+            if self._entry_candle_epoch < now:
+                # Avançar para o próximo minuto (60s)
+                self._entry_candle_epoch = int((self._entry_candle_epoch / 60) + 1) * 60
+                entry_candle_time = datetime.fromtimestamp(self._entry_candle_epoch, tz=timezone.utc).isoformat()
         else:
             entry_candle_time = None
 

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import time
 import yaml
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ from deriv.client import build_client_from_env
 from signals.repository import SignalRepository
 from agent.loop import run_agent
 from utils.logger import logger
+from deriv.market import TIMEFRAME_TO_GRANULARITY
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -39,6 +41,19 @@ async def recover_pending_signals(client, repo, config):
         logger.info(f"Recovery: {len(pending_alive)} signals re-scheduled, {len(pending_expired)} aborted")
 
 
+async def wait_for_next_candle_close(timeframe: str) -> None:
+    """Aguarda até que o candle atual feche, dormindo o tempo exato necessário."""
+    granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe)
+    if not granularity:
+        raise ValueError(f"Timeframe inválido: {timeframe}")
+
+    now = time.time()
+    next_close = (int(now / granularity) + 1) * granularity
+    wait_secs = next_close - now
+    logger.info(f"Aguardando {wait_secs:.1f}s até fechamento do próximo candle...")
+    await asyncio.sleep(wait_secs)
+
+
 async def main() -> None:
     load_dotenv()
     for var in ("OPENROUTER_API_KEY", "DERIV_API_TOKEN"):
@@ -54,17 +69,14 @@ async def main() -> None:
     await client.connect()
     await recover_pending_signals(client, repo, config)
 
-    loop_interval = int(config.get("loop_interval", 60))
-
     try:
         while True:
             await client.ensure_connected()
+            await wait_for_next_candle_close(config["timeframe"])
             try:
                 await run_agent(client, config, repo)
             except Exception as e:
                 logger.exception(f"Erro durante ciclo do agente: {e}")
-            logger.info(f"Aguardando {loop_interval}s até o próximo ciclo...")
-            await asyncio.sleep(loop_interval)
     finally:
         await client.close()
         logger.info("Cliente Deriv encerrado. Encerrando bot.")
