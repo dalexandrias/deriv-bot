@@ -43,10 +43,14 @@ def analyze(candles: list[dict]) -> dict:
     ema50 = float(ema50_series.iloc[-1]) if not ema50_series.empty else last_close
     price_vs_ema50 = "acima" if last_close > ema50 else "abaixo"
 
-    # ADX-14 (força da tendência, valor bruto)
-    adx_indicator = ADXIndicator(high=df["high"], low=df["low"], close=close, window=14)
-    adx_series = adx_indicator.adx()
-    adx = float(adx_series.iloc[-1]) if not adx_series.empty else 20.0
+    # ADX-14 (força da tendência, valor bruto) — needs ≥ 28 candles
+    try:
+        adx_indicator = ADXIndicator(high=df["high"], low=df["low"], close=close, window=14)
+        adx_series = adx_indicator.adx()
+        adx_raw = adx_series.dropna()
+        adx = float(adx_raw.iloc[-1]) if not adx_raw.empty else float("nan")
+    except Exception:
+        adx = float("nan")
 
     # ATR-14 (volatilidade)
     atr_indicator = AverageTrueRange(high=df["high"], low=df["low"], close=close, window=14)

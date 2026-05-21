@@ -16,7 +16,8 @@ class ToolHandlers:
         self.repo = repo
         self._last_analysis: dict | None = None
 
-    async def get_market_analysis(self, symbol: str, timeframe: str, count: int = 20) -> dict:
+    async def get_market_analysis(self, symbol: str, timeframe: str, count: int = 60) -> dict:
+        count = max(count, 60)  # EMA-50 + ADX-14 need at least 60 candles to stabilise
         candles = await market.get_candles(self.client, symbol, timeframe, count)
         if not candles:
             return {"error": "Sem candles retornados"}

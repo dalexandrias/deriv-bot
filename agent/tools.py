@@ -9,7 +9,7 @@ TOOLS = [
                 "properties": {
                     "symbol":    {"type": "string", "description": "Ex: frxEURUSD, R_100"},
                     "timeframe": {"type": "string", "enum": ["1m", "5m", "15m", "1h"]},
-                    "count":     {"type": "integer", "default": 20},
+                    "count":     {"type": "integer", "default": 60, "minimum": 60, "description": "Mínimo 60 — necessário para EMA-50 e ADX-14 estabilizarem"},
                 },
                 "required": ["symbol", "timeframe"],
             },
