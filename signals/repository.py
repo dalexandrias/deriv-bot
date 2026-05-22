@@ -73,15 +73,15 @@ class SignalRepository:
             conn.commit()
             return cursor.lastrowid
 
-    def update_outcome(self, signal_id: int, quote_exit: float, outcome: str) -> None:
-        """Update signal with exit price and outcome."""
+    def update_outcome(self, signal_id: int, quote_entry: float, quote_exit: float, outcome: str) -> None:
+        """Update signal with candle open/close prices and outcome."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
             UPDATE signals
-            SET quote_exit = ?, outcome = ?, status = 'resolved'
+            SET quote_entry = ?, quote_exit = ?, outcome = ?, status = 'resolved'
             WHERE id = ?
-            """, (quote_exit, outcome, signal_id))
+            """, (quote_entry, quote_exit, outcome, signal_id))
             conn.commit()
             if cursor.rowcount == 0:
                 logger.warning(f"No signal found with id={signal_id}")

@@ -31,13 +31,13 @@ async def recover_pending_signals(client, repo, config):
 
     for s in pending_alive:
         from signals import verifier
-        created = datetime.fromisoformat(s.created_at)
-        elapsed = (datetime.now(timezone.utc) - created).total_seconds()
-        remaining = max(s.duration - int(elapsed), 0)
-
         asyncio.create_task(
-            verifier.resolve(client, repo, s.id, s.quote_entry,
-                             s.direction, s.symbol, remaining)
+            verifier.resolve(
+                client, repo, s.id,
+                s.direction, s.symbol, s.timeframe,
+                s.entry_candle_time,
+                settle_delay=config.get("candle_settle_delay", 2),
+            )
         )
 
     if pending_alive or pending_expired:
@@ -65,10 +65,6 @@ async def emit_signal(client, repo, config, market_data, direction, confidence):
     next_entry_epoch = market_data["next_entry_epoch"]
     last_candle_epoch = market_data["last_candle_epoch"]
 
-    # Get current quote for entry
-    quote_entry = await market.get_tick(client, config["symbol"])
-
-    # Format entry candle time
     entry_candle_time = datetime.fromtimestamp(next_entry_epoch, tz=timezone.utc).isoformat()
 
     signal = Signal(
@@ -84,7 +80,7 @@ async def emit_signal(client, repo, config, market_data, direction, confidence):
         adx=indicators.get("adx"),
         atr_pct=indicators.get("atr_pct"),
         price_vs_ema50=indicators.get("price_vs_ema50"),
-        quote_entry=quote_entry,
+        quote_entry=None,  # populated by verifier using candle open
         status="pending",
         last_candle_epoch=last_candle_epoch,
         entry_candle_time=entry_candle_time,
@@ -92,11 +88,13 @@ async def emit_signal(client, repo, config, market_data, direction, confidence):
 
     signal_id = repo.insert(signal)
 
-    # Schedule verification
+    # Schedule verification: resolves using real candle open/close
     asyncio.create_task(
         verifier.resolve(
-            client, repo, signal_id, quote_entry,
-            direction, config["symbol"], int(config["duration"]), entry_candle_time
+            client, repo, signal_id,
+            direction, config["symbol"], config["timeframe"],
+            entry_candle_time,
+            settle_delay=config.get("candle_settle_delay", 2),
         )
     )
 

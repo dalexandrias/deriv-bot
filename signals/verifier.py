@@ -1,83 +1,64 @@
 import asyncio
+import time
 from signals.repository import SignalRepository
 from deriv.client import DerivClient
 from deriv import market
+from deriv.market import TIMEFRAME_TO_GRANULARITY
 from utils.logger import logger
+
 
 async def resolve(
     client: DerivClient,
     repo: SignalRepository,
     signal_id: int,
-    quote_entry: float,
     direction: str,
     symbol: str,
-    duration: int,
-    entry_candle_time: str | None = None,
+    timeframe: str,
+    entry_candle_time: str,
+    settle_delay: int = 2,
 ) -> None:
     """
-    Async task that waits for signal duration, fetches exit price,
-    determines outcome, and updates repository.
+    Waits for the entry candle to close, then validates WIN/LOSS
+    using the candle's actual open and close prices.
     """
     try:
-        # Validate duration
-        if duration <= 0:
-            logger.error(f"Invalid duration {duration} for signal #{signal_id}")
-            return
-
-        # Se temos entry_candle_time, aguardar até o momento correto
         from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
 
-        if entry_candle_time:
-            entry_dt = datetime.fromisoformat(entry_candle_time.replace('Z', '+00:00'))
-            entry_ts = entry_dt.timestamp()
-            now_ts = now.timestamp()
-            wait_time = entry_ts - now_ts
-
-            if wait_time > 0:
-                logger.info(f"Verifier #{signal_id}: Aguardando {wait_time:.1f}s até o candle de entrada")
-                await asyncio.sleep(wait_time)
-
-        # Esperar pela duração do sinal (após a entrada)
-        await asyncio.sleep(duration)
-
-        # Fetch exit quote with validation
-        try:
-            quote_exit = await market.get_tick(client, symbol)
-        except Exception as e:
-            logger.error(f"Verifier #{signal_id} failed to fetch exit quote: {e}")
+        granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe)
+        if not granularity:
+            logger.error(f"Verifier #{signal_id}: timeframe inválido '{timeframe}'")
             return
 
-        # Validate quote_exit
-        if quote_exit is None:
-            logger.error(f"Verifier #{signal_id}: No exit quote received (None)")
+        entry_dt = datetime.fromisoformat(entry_candle_time.replace('Z', '+00:00'))
+        entry_epoch = int(entry_dt.timestamp())
+        close_epoch = entry_epoch + granularity
+
+        wait = close_epoch + settle_delay - time.time()
+        if wait > 0:
+            logger.info(f"Verifier #{signal_id}: aguardando {wait:.1f}s até candle fechar")
+            await asyncio.sleep(wait)
+
+        candle = await market.get_candle_by_epoch(client, symbol, granularity, entry_epoch)
+        if candle is None:
+            logger.error(f"Verifier #{signal_id}: candle epoch={entry_epoch} não encontrado")
             return
 
-        try:
-            quote_exit_float = float(quote_exit)
-        except (ValueError, TypeError) as e:
-            logger.error(f"Verifier #{signal_id}: Invalid quote_exit type {type(quote_exit)}: {e}")
-            return
+        quote_entry = candle["open"]
+        quote_exit = candle["close"]
 
-        # Calculate outcome
         if direction == "CALL":
-            outcome = "win" if quote_exit_float > quote_entry else "loss"
-        else:  # PUT
-            outcome = "win" if quote_exit_float < quote_entry else "loss"
+            outcome = "win" if quote_exit > quote_entry else "loss"
+        else:
+            outcome = "win" if quote_exit < quote_entry else "loss"
 
-        # Update repository
-        try:
-            repo.update_outcome(signal_id, quote_exit_float, outcome)
-            logger.info(
-                f"RESULT #{signal_id} | {direction} | {outcome.upper()} "
-                f"| entry={quote_entry} exit={quote_exit_float}"
-            )
-        except Exception as db_error:
-            logger.error(f"Verifier #{signal_id} failed to update outcome: {db_error}")
-            return
+        repo.update_outcome(signal_id, quote_entry, quote_exit, outcome)
+        logger.info(
+            f"RESULT #{signal_id} | {direction} | {outcome.upper()} "
+            f"| entry={quote_entry} exit={quote_exit}"
+        )
 
     except asyncio.CancelledError:
-        logger.info(f"Verifier #{signal_id} cancelled by system")
+        logger.info(f"Verifier #{signal_id} cancelado pelo sistema")
         raise
     except Exception as e:
-        logger.error(f"Verifier #{signal_id} unexpected error: {e}")
+        logger.error(f"Verifier #{signal_id} erro inesperado: {e}")

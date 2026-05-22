@@ -46,6 +46,28 @@ async def get_tick(client: DerivClient, symbol: str) -> float:
     return float(prices[-1])
 
 
+async def get_candle_by_epoch(client: DerivClient, symbol: str, granularity: int, epoch: int) -> dict | None:
+    """Fetch a specific closed candle by its start epoch."""
+    resp = await client._send({
+        "ticks_history": symbol,
+        "style": "candles",
+        "granularity": granularity,
+        "start": epoch,
+        "end": epoch + granularity,
+        "count": 2,
+    })
+    for c in resp.get("candles", []):
+        if int(c["epoch"]) == epoch:
+            return {
+                "time": int(c["epoch"]),
+                "open": float(c["open"]),
+                "high": float(c["high"]),
+                "low": float(c["low"]),
+                "close": float(c["close"]),
+            }
+    return None
+
+
 async def get_active_symbols(client: DerivClient) -> list[dict]:
     resp = await client._send({"active_symbols": "brief", "product_type": "basic"})
     return resp.get("active_symbols", [])
