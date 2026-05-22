@@ -2,7 +2,9 @@ import json
 import os
 import asyncio
 import httpx
-from datetime import datetime, UTC, timezone
+from datetime import datetime, UTC, timezone, timedelta
+
+BRT = timezone(timedelta(hours=-3))
 
 from deriv.client import DerivClient
 from deriv import market
@@ -74,8 +76,8 @@ async def fetch_and_analyze_market(client: DerivClient, config: dict) -> dict:
         next_entry_epoch += granularity
 
     # Format times for display
-    last_candle_dt = datetime.fromtimestamp(last_candle_epoch, tz=timezone.utc)
-    next_entry_dt = datetime.fromtimestamp(next_entry_epoch, tz=timezone.utc)
+    last_candle_dt = datetime.fromtimestamp(last_candle_epoch, tz=BRT)
+    next_entry_dt = datetime.fromtimestamp(next_entry_epoch, tz=BRT)
 
     logger.info(
         f"📈 Indicadores: RSI={indicators.get('rsi', 0):.1f}, "
@@ -83,8 +85,8 @@ async def fetch_and_analyze_market(client: DerivClient, config: dict) -> dict:
         f"ADX={indicators.get('adx', 0):.1f}, "
         f"ATR={indicators.get('atr_pct', 0):.1f}%"
     )
-    logger.info(f"🕐 Último candle: {last_candle_dt.strftime('%d/%m/%Y - %H:%M:%S')} UTC")
-    logger.info(f"🕐 Próxima entrada: {next_entry_dt.strftime('%d/%m/%Y - %H:%M:%S')} UTC")
+    logger.info(f"🕐 Último candle: {last_candle_dt.strftime('%d/%m/%Y - %H:%M:%S')} BRT")
+    logger.info(f"🕐 Próxima entrada: {next_entry_dt.strftime('%d/%m/%Y - %H:%M:%S')} BRT")
 
     return {
         "candles": candles,
