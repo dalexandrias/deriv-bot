@@ -40,13 +40,14 @@ def build_context_block(repo: SignalRepository, config: dict) -> str:
 
             lines.append(
                 f"- #{s.id} {s.direction} | {outcome_str} "
-                f"| RSI={s.rsi} ADX={s.adx} ATR%={s.atr_pct} PriceVsEMA50={s.price_vs_ema50} "
+                f"| RSI={s.rsi} ADX={s.adx} ATR%={s.atr_pct} "
                 f"| conf={confidence:.0%}"
             )
 
         stats = repo.get_pattern_stats()
         if stats:
-            lines.append("\n## Taxa de acerto por padrão (sinais resolvidos)")
+            lines.append("\n## Taxa de acerto por padrão (n≥5, sinais resolvidos)")
+            omitted = 0
             for row in stats:
                 # Safe dictionary access with .get() and defaults
                 direction = row.get("direction", "UNKNOWN")
@@ -67,10 +68,19 @@ def build_context_block(repo: SignalRepository, config: dict) -> str:
                     )
                     continue
 
+                # Skip patterns with insufficient sample size
+                if total < 5:
+                    omitted += 1
+                    continue
+
+                quality = "favorável" if win_rate >= 0.6 else ("desfavorável" if win_rate < 0.4 else "neutro")
                 lines.append(
                     f"- {direction} | RSI={rsi_bucket} ADX={adx_bucket}: "
-                    f"{wins}/{total} acertos ({win_rate:.0%})"
+                    f"{wins}/{total} acertos ({win_rate:.0%}) — {quality}"
                 )
+
+            if omitted:
+                lines.append(f"({omitted} padrão(ns) com n<5 omitido(s) — sem significância estatística)")
 
         return "\n".join(lines)
 

@@ -58,16 +58,38 @@ def analyze(candles: list[dict]) -> dict:
     atr = float(atr_series.iloc[-1]) if not atr_series.empty else 0.0
     atr_pct = (atr / last_close * 100) if last_close != 0 else 0.0
 
+    # RSI trajectory: last 3 values for momentum detection
+    rsi_clean = rsi_series.dropna()
+    rsi_prev3 = [round(float(v), 2) for v in rsi_clean.iloc[-3:].tolist()] if len(rsi_clean) >= 3 else []
+
+    # Recent closes: last 5 candles
+    close_prev5 = [round(float(v), 5) for v in close.iloc[-5:].tolist()]
+
+    # Distances to BB bands and EMA-50 expressed in ATR units
+    if atr > 0:
+        bb_dist_upper_atr = round((bb_upper - last_close) / atr, 2)
+        bb_dist_lower_atr = round((last_close - bb_lower) / atr, 2)
+        ema50_dist_atr = round((last_close - ema50) / atr, 2)
+    else:
+        bb_dist_upper_atr = 0.0
+        bb_dist_lower_atr = 0.0
+        ema50_dist_atr = 0.0
+
     return {
         "last_close": round(last_close, 5),
         "candles_count": len(candles),
         "rsi": round(rsi, 2),
         "rsi_signal": rsi_signal,
+        "rsi_prev3": rsi_prev3,
+        "close_prev5": close_prev5,
         "bb_upper": round(bb_upper, 5),
         "bb_lower": round(bb_lower, 5),
         "bb_position": bb_position,
+        "bb_dist_upper_atr": bb_dist_upper_atr,
+        "bb_dist_lower_atr": bb_dist_lower_atr,
         "ema50": round(ema50, 5),
         "price_vs_ema50": price_vs_ema50,
+        "ema50_dist_atr": ema50_dist_atr,
         "adx": round(adx, 2),
         "atr": round(atr, 5),
         "atr_pct": round(atr_pct, 2),
