@@ -66,9 +66,12 @@ async def fetch_and_analyze_market(client: DerivClient, config: dict) -> dict:
             f"(API={last_candle_epoch}, esperado≥{expected_last_closed})"
         )
 
-    # Entry candle = the one that just opened (current period boundary, wall-clock-based)
-    # This is reliable even when the API returns stale data
+    # Next entry candle = the next candle boundary strictly in the future (wall-clock-based).
+    # Using `if` instead of the original `while` avoids the race condition that could
+    # advance two periods ahead when the API returned stale data.
     next_entry_epoch = int(now / granularity) * granularity
+    if next_entry_epoch <= now:
+        next_entry_epoch += granularity
 
     # Format times for display
     last_candle_dt = datetime.fromtimestamp(last_candle_epoch, tz=timezone.utc)
