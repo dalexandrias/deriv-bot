@@ -6,3 +6,4 @@ duration: 5
 loop_interval: 60
 learning_history_size: 20
 db_path: "data/signals.db"
+min_confidence: 0.50
