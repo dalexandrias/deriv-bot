@@ -107,6 +107,9 @@ async def _call_openrouter(http: httpx.AsyncClient, model: str, messages: list[d
     payload = {
         "model": model,
         "messages": messages,
+        # Force JSON-only output at the protocol level, suppressing chain-of-thought
+        # preamble that reasoning models (e.g. DeepSeek V4) emit before the answer.
+        "response_format": {"type": "json_object"},
     }
 
     last_exc = None
