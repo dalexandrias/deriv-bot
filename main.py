@@ -140,6 +140,9 @@ async def main() -> None:
         while True:
             await client.ensure_connected()
             await wait_for_next_candle_close(config["timeframe"])
+            settle = config.get("candle_settle_delay", 2)
+            if settle > 0:
+                await asyncio.sleep(settle)
 
             try:
                 # Step 1: Fetch market data and calculate indicators

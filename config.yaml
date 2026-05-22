@@ -7,3 +7,4 @@ loop_interval: 60
 learning_history_size: 20
 db_path: "data/signals.db"
 min_confidence: 0.50
+candle_settle_delay: 2  # seconds to wait after candle close for Deriv API to settle

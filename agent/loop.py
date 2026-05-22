@@ -54,14 +54,21 @@ async def fetch_and_analyze_market(client: DerivClient, config: dict) -> dict:
     last_candle_epoch = candles[-1]["time"]  # seconds (Deriv API)
     now = datetime.now(timezone.utc).timestamp()
 
-    # Calculate next entry candle (next multiple of granularity after last candle)
     from deriv.market import TIMEFRAME_TO_GRANULARITY
     granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe, 60)
-    next_entry_epoch = ((int(last_candle_epoch / granularity) + 1) * granularity)
 
-    # If already passed, move to next candle
-    while next_entry_epoch < now:
-        next_entry_epoch += granularity
+    # Detect API lag: last candle should be at most 1 period behind the current boundary
+    expected_last_closed = int(now / granularity) * granularity - granularity
+    lag_periods = (expected_last_closed - last_candle_epoch) / granularity
+    if lag_periods > 1:
+        logger.warning(
+            f"⚠️  API lag detectado: último candle da API é {int(lag_periods)} período(s) atrás do esperado "
+            f"(API={last_candle_epoch}, esperado≥{expected_last_closed})"
+        )
+
+    # Entry candle = the one that just opened (current period boundary, wall-clock-based)
+    # This is reliable even when the API returns stale data
+    next_entry_epoch = int(now / granularity) * granularity
 
     # Format times for display
     last_candle_dt = datetime.fromtimestamp(last_candle_epoch, tz=timezone.utc)
