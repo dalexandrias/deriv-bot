@@ -1,0 +1,239 @@
+/* ── Dashboard TUI — paleta minimalista densa ─────────────────────────── */
+
+Screen {
+    layout: vertical;
+    background: $background;
+}
+
+Header {
+    height: 1;
+    background: $background;
+    color: $foreground-muted;
+}
+
+Footer {
+    height: 1;
+    background: $background;
+}
+
+TabbedContent {
+    height: 1fr;
+}
+
+TabPane {
+    padding: 0;
+}
+
+/* ── Status bar (linha fina no topo) ────────────────────────────────────── */
+StatusPanel {
+    height: 1;
+    padding: 0 1;
+    background: $background;
+    border-bottom: hkey $foreground 20%;
+}
+
+StatusPanel Horizontal {
+    height: 1;
+    align: left middle;
+}
+
+StatusPanel Static {
+    margin-right: 3;
+    color: $foreground-muted;
+}
+
+#connection-dot {
+    color: $error;
+    margin-right: 1;
+}
+
+#connection-status {
+    color: $foreground;
+}
+
+/* ── Utility classes ────────────────────────────────────────────────────── */
+.label {
+    color: $foreground-muted;
+    text-style: bold;
+}
+
+.value {
+    color: $foreground;
+}
+
+.dim {
+    color: $foreground-disabled;
+}
+
+.win {
+    color: $success;
+}
+
+.loss {
+    color: $error;
+}
+
+.warn {
+    color: $warning;
+}
+
+.accent {
+    color: cyan;
+}
+
+.section-title {
+    color: $foreground-muted;
+    text-style: bold;
+    padding: 0 1;
+    border-bottom: hkey $foreground 15%;
+}
+
+/* ── Painéis genéricos ──────────────────────────────────────────────────── */
+MarketPanel, ActivePanel, HistoryPanel, StatsPanel, LogPanel, OverviewPanel {
+    height: 1fr;
+    padding: 0;
+}
+
+/* ── DataTable ──────────────────────────────────────────────────────────── */
+DataTable {
+    height: 1fr;
+    background: $background;
+}
+
+DataTable > .datatable--header {
+    color: $foreground-muted;
+    text-style: bold;
+    background: $background;
+}
+
+DataTable > .datatable--cursor {
+    background: $foreground 10%;
+}
+
+/* ── RichLog / LogPanel ─────────────────────────────────────────────────── */
+RichLog {
+    height: 1fr;
+    scrollbar-size: 1 1;
+    background: $background;
+    padding: 0 1;
+}
+
+/* ── MarketPanel ────────────────────────────────────────────────────────── */
+#market-comparison {
+    height: auto;
+    padding: 0 1;
+}
+
+#pre-analysis-section {
+    height: auto;
+    padding: 0 1;
+    border-top: hkey $foreground 15%;
+}
+
+#timing-section {
+    height: auto;
+    padding: 0 1;
+    border-top: hkey $foreground 15%;
+}
+
+/* ── ActivePanel ────────────────────────────────────────────────────────── */
+#active-header {
+    height: 1;
+    padding: 0 1;
+    color: $foreground-muted;
+    border-bottom: hkey $foreground 15%;
+}
+
+#active-feed {
+    height: 1fr;
+    padding: 0 1;
+}
+
+/* ── HistoryPanel ───────────────────────────────────────────────────────── */
+#history-header {
+    height: 1;
+    padding: 0 1;
+    color: $foreground-muted;
+    border-bottom: hkey $foreground 15%;
+}
+
+#history-streak {
+    height: 1;
+    padding: 0 1;
+    color: $foreground-muted;
+    border-top: hkey $foreground 15%;
+}
+
+/* ── StatsPanel ─────────────────────────────────────────────────────────── */
+#stats-general {
+    height: auto;
+    padding: 0 1;
+    border-bottom: hkey $foreground 15%;
+}
+
+#stats-grid {
+    height: 1fr;
+    layout: grid;
+    grid-size: 2 3;
+    grid-gutter: 0;
+}
+
+.stats-block {
+    padding: 0 1;
+    border-right: hkey $foreground 10%;
+}
+
+/* ── LogPanel ───────────────────────────────────────────────────────────── */
+#log-header {
+    height: 1;
+    padding: 0 1;
+    color: $foreground-muted;
+    border-bottom: hkey $foreground 15%;
+}
+
+/* ── OverviewPanel ──────────────────────────────────────────────────────── */
+#overview-status-bar {
+    height: 1;
+    padding: 0 1;
+    border-bottom: hkey $foreground 20%;
+    background: $background;
+}
+
+#overview-market-row {
+    height: auto;
+    layout: horizontal;
+    border-bottom: hkey $foreground 15%;
+}
+
+#overview-m5 {
+    width: 1fr;
+    padding: 0 1;
+    border-right: hkey $foreground 15%;
+}
+
+#overview-m15 {
+    width: 1fr;
+    padding: 0 1;
+    border-right: hkey $foreground 15%;
+}
+
+#overview-preanalysis {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#overview-bottom-row {
+    height: 1fr;
+    layout: horizontal;
+}
+
+#overview-signal {
+    width: 1fr;
+    padding: 0 1;
+    border-right: hkey $foreground 15%;
+}
+
+#overview-minilog {
+    width: 1fr;
+    padding: 0 1;
+}
