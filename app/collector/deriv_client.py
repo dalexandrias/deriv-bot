@@ -1,0 +1,175 @@
+import asyncio
+import json
+import itertools
+import os
+
+import websockets
+from loguru import logger
+
+
+class DerivError(Exception):
+    pass
+
+
+TIMEFRAME_TO_GRANULARITY = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "1h": 3600,
+}
+
+
+class DerivClient:
+    WS_URL_TMPL = "wss://ws.derivws.com/websockets/v3?app_id={app_id}"
+
+    def __init__(self, api_token: str, app_id: str | int = 1089):
+        self.api_token = api_token
+        self.app_id = str(app_id)
+        self._ws = None
+        self._listener_task: asyncio.Task | None = None
+        self._pending: dict[int, asyncio.Future] = {}
+        self._req_id_counter = itertools.count(1)
+        self._lock = asyncio.Lock()
+        self._reconnect_lock = asyncio.Lock()
+        self._stop = False
+
+    @property
+    def is_connected(self) -> bool:
+        return self._ws is not None and not self._ws.closed
+
+    async def connect(self) -> None:
+        url = self.WS_URL_TMPL.format(app_id=self.app_id)
+        backoff = 1
+        while not self._stop:
+            try:
+                logger.info(f"Conectando à Deriv WS ({url}) ...")
+                self._ws = await websockets.connect(url, ping_interval=20, ping_timeout=20)
+                self._listener_task = asyncio.create_task(self._listener())
+                auth = await self._send({"authorize": self.api_token})
+                logger.info(f"Autorizado. Loginid={auth.get('authorize', {}).get('loginid')}")
+                return
+            except Exception as e:
+                logger.error(f"Falha ao conectar: {e}. Retentando em {backoff}s")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 8)
+
+    async def ensure_connected(self) -> None:
+        """Reconnect if the WebSocket is no longer open. Lock prevents concurrent reconnects."""
+        if not self.is_connected:
+            async with self._reconnect_lock:
+                if not self.is_connected:  # re-check inside lock
+                    logger.info("WS desconectado — reconectando.")
+                    self._stop = False
+                    await self.connect()
+
+    async def close(self) -> None:
+        self._stop = True
+        if self._listener_task:
+            self._listener_task.cancel()
+        if self._ws:
+            await self._ws.close()
+
+    async def _listener(self) -> None:
+        try:
+            async for raw in self._ws:
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    logger.warning(f"Mensagem não-JSON recebida: {raw[:200]}")
+                    continue
+                logger.debug(f"WS<<< {msg}")
+                req_id = msg.get("req_id")
+                fut = self._pending.pop(req_id, None) if req_id is not None else None
+                if fut and not fut.done():
+                    fut.set_result(msg)
+        except asyncio.CancelledError:
+            return
+        except websockets.ConnectionClosed as e:
+            logger.warning(f"Conexão WS fechada: {e}. Tentando reconectar.")
+            for fut in self._pending.values():
+                if not fut.done():
+                    fut.set_exception(DerivError("WS closed"))
+            self._pending.clear()
+            if not self._stop:
+                await self.connect()
+
+    async def _send(self, payload: dict, timeout: float = 30.0, _retry: bool = True) -> dict:
+        await self.ensure_connected()
+        req_id = next(self._req_id_counter)
+        payload_with_id = {**payload, "req_id": req_id}
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        self._pending[req_id] = fut
+        try:
+            async with self._lock:
+                logger.debug(f"WS>>> {payload_with_id}")
+                await self._ws.send(json.dumps(payload_with_id))
+            resp = await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(req_id, None)
+            raise DerivError(f"Timeout aguardando resposta para req_id={req_id}")
+        except (websockets.ConnectionClosed, DerivError) as e:
+            self._pending.pop(req_id, None)
+            if not _retry:
+                raise DerivError(f"WS falhou após retry: {e}") from e
+            logger.warning(f"WS caiu durante send/recv ({e}) — aguardando reconexão e retentando.")
+            await self.ensure_connected()
+            return await self._send(payload, timeout=timeout, _retry=False)
+        if "error" in resp:
+            err = resp["error"]
+            raise DerivError(f"{err.get('code')}: {err.get('message')}")
+        return resp
+
+    async def get_candles(self, symbol: str, timeframe: str, count: int = 20) -> list[dict]:
+        granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe)
+        if granularity is None:
+            raise ValueError(f"Timeframe inválido: {timeframe}")
+        resp = await self._send({
+            "ticks_history": symbol,
+            "style": "candles",
+            "granularity": granularity,
+            "count": count,
+            "end": "latest",
+        })
+        candles = resp.get("candles", [])
+        return [
+            {
+                "time": c["epoch"],
+                "open": float(c["open"]),
+                "high": float(c["high"]),
+                "low": float(c["low"]),
+                "close": float(c["close"]),
+            }
+            for c in candles
+        ]
+
+    async def get_candle_by_epoch(self, symbol: str, granularity: int, epoch: int) -> dict | None:
+        """Fetch a specific closed candle by its start epoch."""
+        resp = await self._send({
+            "ticks_history": symbol,
+            "style": "candles",
+            "granularity": granularity,
+            "start": epoch,
+            "end": epoch + granularity,
+            "count": 2,
+        })
+        for c in resp.get("candles", []):
+            if int(c["epoch"]) == epoch:
+                return {
+                    "time": int(c["epoch"]),
+                    "open": float(c["open"]),
+                    "high": float(c["high"]),
+                    "low": float(c["low"]),
+                    "close": float(c["close"]),
+                }
+        return None
+
+    async def get_active_symbols(self) -> list[dict]:
+        resp = await self._send({"active_symbols": "brief", "product_type": "basic"})
+        return resp.get("active_symbols", [])
+
+
+def build_client_from_env() -> DerivClient:
+    token = os.environ["DERIV_API_TOKEN"]
+    app_id = os.environ.get("DERIV_APP_ID", "1089")
+    return DerivClient(token, app_id)
