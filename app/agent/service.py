@@ -1,0 +1,289 @@
+import asyncio
+import os
+import time
+import json
+from datetime import datetime, timezone, timedelta
+from typing import TYPE_CHECKING
+
+import httpx
+from loguru import logger
+from sqlalchemy import select
+
+from app.collector.deriv_client import DerivClient, TIMEFRAME_TO_GRANULARITY
+from app.signals.repository import SignalRepository
+from app.signals.models import SignalCreate
+from app.indicators.service import IndicatorService
+from app.indicators.technical import analyze
+from app.agent.pre_analysis import run_pre_analysis
+from app.agent.prompts import build_system_prompt, build_user_context
+from app.agent.tools import TOOLS, ToolDispatcher
+from app.agent.learning import build_context_block
+from app.events.protocol import EventType
+from app.events.publisher import publish
+from app.config import settings
+from app.db.models import BotConfig, IndicatorConfig
+
+if TYPE_CHECKING:
+    from app.signals.repository import SignalRepository as RepoType
+
+BRT = timezone(timedelta(hours=-3))
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MAX_TOOL_TURNS = 5
+MAX_RETRIES = 3
+
+
+class AgentService:
+    def __init__(self, client: DerivClient, repo: SignalRepository):
+        self.client = client
+        self.repo = repo
+        self._running = False
+        self._task: asyncio.Task | None = None
+        self._last_cycle: datetime | None = None
+        self._start_time: datetime | None = None
+
+    async def start(self) -> None:
+        self._running = True
+        self._start_time = datetime.now(timezone.utc)
+        self._task = asyncio.create_task(self._loop())
+        logger.info("Agent iniciado")
+
+    async def stop(self) -> None:
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Agent parado")
+
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    @property
+    def status(self) -> dict:
+        return {
+            "running": self._running,
+            "last_cycle": self._last_cycle.isoformat() if self._last_cycle else None,
+            "uptime": (datetime.now(timezone.utc) - self._start_time).total_seconds() if self._start_time else 0,
+        }
+
+    async def _load_config(self) -> dict:
+        stmt = select(BotConfig)
+        result = await self.repo.session.execute(stmt)
+        configs = result.scalars().all()
+        config = {}
+        for cfg in configs:
+            try:
+                config[cfg.key] = json.loads(cfg.value)
+            except (json.JSONDecodeError, TypeError):
+                config[cfg.key] = cfg.value
+        return config
+
+    async def _load_indicator_configs(self) -> list:
+        stmt = select(IndicatorConfig)
+        result = await self.repo.session.execute(stmt)
+        return result.scalars().all()
+
+    async def _loop(self) -> None:
+        while self._running:
+            try:
+                config = await self._load_config()
+                indicator_configs = await self._load_indicator_configs()
+
+                await self.client.ensure_connected()
+                publish(EventType.STATUS, {"status": "waiting", "detail": "Aguardando candle"})
+                await self._wait_for_next_candle_close(config)
+                settle = int(config.get("candle_settle_delay", 2))
+                if settle > 0:
+                    await asyncio.sleep(settle)
+
+                publish(EventType.STATUS, {"status": "analyzing", "detail": "Analisando mercado"})
+                market_data = await self._fetch_and_analyze(config, indicator_configs)
+                publish(EventType.MARKET, {
+                    "m5_indicators": market_data["m5_indicators"],
+                    "m15_indicators": market_data["m15_indicators"],
+                    "pre_analysis": market_data["pre_analysis"],
+                })
+
+                decision_tf = config.get("decision_timeframe", "5m")
+                context_tf = config.get("context_timeframe", "15m")
+                await self.repo.upsert_candles(market_data["m5_candles"], config["symbol"], decision_tf)
+                await self.repo.upsert_candles(market_data["m15_candles"], config["symbol"], context_tf)
+
+                result = await self._run_agent(config, market_data)
+                publish(EventType.LLM_RESPONSE, {
+                    "direction": result["direction"],
+                    "confidence": result["confidence"],
+                })
+
+                confidence = result["confidence"]
+                direction = result["direction"]
+                min_confidence = float(config.get("min_confidence", 0.50))
+
+                if confidence >= min_confidence and direction != "NONE":
+                    signal_data = SignalCreate(
+                        symbol=config["symbol"], timeframe=decision_tf,
+                        direction=direction, confidence=confidence,
+                        duration=int(config.get("duration", 300)),
+                        rsi=market_data["m5_indicators"].get("rsi"),
+                        bb_position=market_data["m5_indicators"].get("bb_position"),
+                        adx=market_data["m5_indicators"].get("adx"),
+                        atr_pct=market_data["m5_indicators"].get("atr_pct"),
+                        price_vs_ema50=market_data["m5_indicators"].get("price_vs_ema50"),
+                        macd_line=market_data["m5_indicators"].get("macd_line"),
+                        macd_signal=market_data["m5_indicators"].get("macd_signal"),
+                        macd_histogram=market_data["m5_indicators"].get("macd_histogram"),
+                        regime=market_data["pre_analysis"].get("regime"),
+                        time_window=market_data["pre_analysis"].get("time_window", {}).get("window"),
+                        m15_bias=market_data["pre_analysis"].get("m15_bias", {}).get("bias"),
+                        confluence_score=max(
+                            market_data["pre_analysis"].get("confluence", {}).get("call_signals", 0),
+                            market_data["pre_analysis"].get("confluence", {}).get("put_signals", 0),
+                        ),
+                        strategy=market_data["pre_analysis"].get("suggested_strategy"),
+                        entry_candle_time=market_data.get("next_entry_time"),
+                    )
+                    signal_id = await self.repo.insert_signal(signal_data)
+                    await self.repo.session.commit()
+                    publish(EventType.SIGNAL_EMITTED, {
+                        "id": signal_id, "direction": direction,
+                        "confidence": confidence, "symbol": config["symbol"],
+                        "entry_candle_time": market_data.get("next_entry_time"),
+                    })
+                    from app.signals.verifier import resolve
+                    asyncio.create_task(resolve(
+                        self.client, self.repo, signal_id, direction,
+                        config["symbol"], decision_tf,
+                        market_data.get("next_entry_time"),
+                        settle_delay=int(config.get("candle_settle_delay", 2)),
+                    ))
+                else:
+                    publish(EventType.STATUS, {"status": "idle", "detail": f"Confiança insuficiente: {confidence:.0%}"})
+
+                self._last_cycle = datetime.now(timezone.utc)
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.exception(f"Erro durante ciclo do agente: {e}")
+                publish(EventType.ERROR, {"message": str(e)})
+                await asyncio.sleep(10)
+
+    async def _wait_for_next_candle_close(self, config: dict) -> None:
+        tf = config.get("decision_timeframe", "5m")
+        granularity = TIMEFRAME_TO_GRANULARITY.get(tf, 300)
+        now = time.time()
+        next_close = (int(now / granularity) + 1) * granularity
+        wait_secs = next_close - now
+        logger.info(f"Aguardando {wait_secs:.1f}s até fechamento do próximo candle ({tf})...")
+        await asyncio.sleep(wait_secs)
+
+    async def _fetch_and_analyze(self, config: dict, indicator_configs: list) -> dict:
+        decision_tf = config.get("decision_timeframe", "5m")
+        context_tf = config.get("context_timeframe", "15m")
+        symbol = config.get("symbol", "R_25")
+        count = max(int(config.get("candles_count", 60)), 60)
+
+        m5_candles = await self.client.get_candles(symbol, decision_tf, count)
+        m15_candles = await self.client.get_candles(symbol, context_tf, count)
+        m5_indicators = IndicatorService.analyze_with_config(m5_candles, indicator_configs)
+        m15_indicators = IndicatorService.analyze_with_config(m15_candles, indicator_configs)
+        m5_indicators["symbol"] = symbol
+        m5_indicators["timeframe"] = decision_tf
+        m15_indicators["symbol"] = symbol
+        m15_indicators["timeframe"] = context_tf
+        pre_analysis = run_pre_analysis(m5_indicators, m15_indicators, m5_candles, m15_candles)
+
+        last_candle_epoch = m5_candles[-1]["time"]
+        now = datetime.now(timezone.utc).timestamp()
+        granularity = TIMEFRAME_TO_GRANULARITY.get(decision_tf, 300)
+        next_entry_epoch = int(now / granularity) * granularity
+        if next_entry_epoch <= now:
+            next_entry_epoch += granularity
+        last_candle_dt = datetime.fromtimestamp(last_candle_epoch, tz=BRT)
+        next_entry_dt = datetime.fromtimestamp(next_entry_epoch, tz=BRT)
+
+        return {
+            "m5_candles": m5_candles, "m15_candles": m15_candles,
+            "m5_indicators": m5_indicators, "m15_indicators": m15_indicators,
+            "pre_analysis": pre_analysis,
+            "last_candle_epoch": last_candle_epoch, "next_entry_epoch": next_entry_epoch,
+            "last_candle_time": last_candle_dt.isoformat(),
+            "next_entry_time": next_entry_dt.isoformat(),
+        }
+
+    async def _run_agent(self, config: dict, market_data: dict) -> dict:
+        decision_tf = config.get("decision_timeframe", "5m")
+        context_tf = config.get("context_timeframe", "15m")
+        system_prompt = build_system_prompt(config)
+        user_msg = build_user_context(config, market_data["m5_indicators"],
+            market_data["m15_indicators"], market_data["pre_analysis"],
+            market_data.get("last_candle_time", ""), market_data.get("next_entry_time", ""))
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+        dispatcher = ToolDispatcher(self.repo, config["symbol"], decision_tf, context_tf)
+        content = ""
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        async with httpx.AsyncClient() as http:
+            for turn in range(MAX_TOOL_TURNS + 1):
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                payload = {"model": config["model"], "messages": messages, "tools": TOOLS}
+                last_exc = None
+                resp = None
+                for attempt in range(1, MAX_RETRIES + 1):
+                    try:
+                        r = await http.post(OPENROUTER_URL, headers=headers, json=payload, timeout=60.0)
+                        r.raise_for_status()
+                        resp = r.json()
+                        break
+                    except Exception as e:
+                        last_exc = e
+                        logger.warning(f"OpenRouter falhou ({attempt}/{MAX_RETRIES}): {e}")
+                        await asyncio.sleep(2 ** attempt)
+                if resp is None:
+                    raise RuntimeError(f"OpenRouter indisponível: {last_exc}")
+                choice = resp["choices"][0]
+                message = choice["message"]
+                tool_calls = message.get("tool_calls") or []
+                if not tool_calls:
+                    content = (message.get("content") or "").strip()
+                    break
+                messages.append({"role": "assistant", "tool_calls": tool_calls, "content": message.get("content") or ""})
+                for tc in tool_calls:
+                    tool_name = tc["function"]["name"]
+                    try:
+                        args = json.loads(tc["function"].get("arguments", "{}"))
+                    except json.JSONDecodeError:
+                        args = {}
+                    result = dispatcher.dispatch(tool_name, args)
+                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result, ensure_ascii=False)})
+                if turn == MAX_TOOL_TURNS:
+                    payload2 = {"model": config["model"], "messages": messages}
+                    r2 = await http.post(OPENROUTER_URL, headers=headers, json=payload2, timeout=60.0)
+                    r2.raise_for_status()
+                    content = (r2.json()["choices"][0]["message"].get("content") or "").strip()
+        return self._parse_response(content, market_data.get("pre_analysis"))
+
+    @staticmethod
+    def _parse_response(content: str, pre_analysis: dict | None = None) -> dict:
+        try:
+            lines = [line.strip() for line in content.strip().splitlines() if line.strip()]
+            if len(lines) < 3:
+                raise ValueError(f"Expected 3 lines, got {len(lines)}")
+            direction_raw = lines[-2].upper()
+            confidence_line = lines[-1]
+            direction_map = {"COMPRA": "CALL", "VENDA": "PUT"}
+            direction = direction_map.get(direction_raw)
+            if direction is None:
+                fallback = "CALL"
+                if pre_analysis and pre_analysis.get("suggested_direction") in ("CALL", "PUT"):
+                    fallback = pre_analysis["suggested_direction"]
+                direction = fallback
+            confidence_pct = int(confidence_line.replace("%", ""))
+            confidence = confidence_pct / 100.0
+            return {"confidence": confidence, "direction": direction, "raw_response": content}
+        except (ValueError, IndexError):
+            fallback = "CALL"
+            if pre_analysis and pre_analysis.get("suggested_direction") in ("CALL", "PUT"):
+                fallback = pre_analysis["suggested_direction"]
+            return {"confidence": 0.0, "direction": fallback, "raw_response": content}
