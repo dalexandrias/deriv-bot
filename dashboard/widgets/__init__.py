@@ -1,1 +1,0 @@
-"""Widgets TUI do dashboard."""

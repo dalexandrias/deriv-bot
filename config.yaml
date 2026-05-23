@@ -1,10 +1,11 @@
 model: "deepseek/deepseek-v4-flash"
-symbol: "R_100"
-timeframe: "1m"
+symbol: "R_25"
+decision_timeframe: "5m"
+context_timeframe: "15m"
 candles_count: 60
-duration: 5
-loop_interval: 60
+duration: 300
+loop_interval: 300
 learning_history_size: 20
 db_path: "data/signals.db"
 min_confidence: 0.50
-candle_settle_delay: 2  # seconds to wait after candle close for Deriv API to settle
+candle_settle_delay: 2 # seconds to wait after candle close for Deriv API to settle
