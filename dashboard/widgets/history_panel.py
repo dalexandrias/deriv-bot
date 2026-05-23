@@ -47,9 +47,9 @@ class HistoryPanel(Vertical):
         self._all_signals = signals
         if streak is not None:
             self._streak = streak
-        self._render()
+        self._refresh_display()
 
-    def _render(self) -> None:
+    def _refresh_display(self) -> None:
         signals = self._filtered_signals()
         self._render_header(signals)
         self._render_table(signals)
@@ -170,16 +170,16 @@ class HistoryPanel(Vertical):
 
     def action_filter_wins(self) -> None:
         self._filter = "wins"
-        self._render()
+        self._refresh_display()
 
     def action_filter_losses(self) -> None:
         self._filter = "losses"
-        self._render()
+        self._refresh_display()
 
     def action_filter_aborted(self) -> None:
         self._filter = "aborted"
-        self._render()
+        self._refresh_display()
 
     def action_filter_all(self) -> None:
         self._filter = "all"
-        self._render()
+        self._refresh_display()

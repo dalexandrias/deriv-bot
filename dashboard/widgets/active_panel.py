@@ -30,9 +30,9 @@ class ActivePanel(Vertical):
     def update_active_signals(self, signals: list, next_candle_time: str = "") -> None:
         self._signals = signals
         self._next_candle = next_candle_time
-        self._render()
+        self._refresh_display()
 
-    def _render(self) -> None:
+    def _refresh_display(self) -> None:
         header = self.query_one("#active-header", Static)
         feed = self.query_one("#active-feed", Vertical)
 
@@ -98,4 +98,4 @@ class ActivePanel(Vertical):
             feed.mount(Static(t))
 
     def on_mount(self) -> None:
-        self.set_interval(1, self._render)
+        self.set_interval(1, self._refresh_display)
