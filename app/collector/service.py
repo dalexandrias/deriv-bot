@@ -54,6 +54,7 @@ class CollectorService:
                             logger.success(f"Candles salvas | {symbol}/{tf} | {len(candles)} candles | último epoch={candles[-1]['time'] if candles else '-'}")
                         except Exception as e:
                             logger.error(f"Erro ao coletar {symbol}/{tf}: {e}")
+                            await self.repo.session.rollback()
 
                 # Wait until next candle close
                 granularity = TIMEFRAME_TO_GRANULARITY.get(self.timeframes[0] if self.timeframes else "5m", 300)
