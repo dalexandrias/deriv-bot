@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import Integer, select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,12 +109,17 @@ class SignalRepository:
         limit: int = 20,
         outcome: str | None = None,
         direction: str | None = None,
+        recent_days: int | None = None,
     ) -> list[dict]:
         query = select(SignalORM).order_by(SignalORM.id.desc()).limit(limit)
-        if outcome is not None:
+        # Normalise sentinel values sent by the LLM tool schema
+        if outcome and outcome != "any":
             query = query.where(SignalORM.outcome == outcome)
-        if direction is not None:
+        if direction and direction != "any":
             query = query.where(SignalORM.direction == direction)
+        if recent_days is not None and recent_days > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=recent_days)
+            query = query.where(SignalORM.created_at >= cutoff)
         result = await self.session.execute(query)
         return [_orm_to_dict(s) for s in result.scalars().all()]
 
@@ -157,7 +162,7 @@ class SignalRepository:
         symbol: str,
         timeframe: str,
         count: int = 60,
-        before_epoch: datetime | None = None,
+        before_epoch: int | None = None,
     ) -> list[dict]:
         query = (
             select(CandleORM)
@@ -248,7 +253,7 @@ def _orm_to_dict(sig: SignalORM) -> dict:
 
 def _candle_to_dict(c: CandleORM) -> dict:
     return {
-        "time": int(c.epoch.timestamp()) if c.epoch else None,
+        "time": c.epoch,
         "open": c.open,
         "high": c.high,
         "low": c.low,

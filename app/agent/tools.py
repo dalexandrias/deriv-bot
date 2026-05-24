@@ -137,16 +137,16 @@ class ToolDispatcher:
         self.decision_timeframe = decision_timeframe
         self.context_timeframe = context_timeframe
 
-    def dispatch(self, name: str, args: dict) -> dict:
+    async def dispatch(self, name: str, args: dict) -> dict:
         if name == "query_signal_history":
-            return self._query_signal_history(**args)
+            return await self._query_signal_history(**args)
         if name == "get_candles_range":
-            return self._get_candles_range(**args)
+            return await self._get_candles_range(**args)
         if name == "calc_indicator":
-            return self._calc_indicator(**args)
+            return await self._calc_indicator(**args)
         return {"error": f"Tool desconhecida: {name}"}
 
-    async def _query_signal_history_async(
+    async def _query_signal_history(
         self,
         limit: int = 10,
         outcome: str = "any",
@@ -158,31 +158,18 @@ class ToolDispatcher:
         )
         return {"count": len(signals), "signals": signals}
 
-    def _query_signal_history(
-        self,
-        limit: int = 10,
-        outcome: str = "any",
-        direction: str = "any",
-        recent_days: int | None = None,
-    ) -> dict:
-        signals = self.repo.query_signals_filtered(
-            limit=limit, outcome=outcome, direction=direction, recent_days=recent_days
-        )
-        return {"count": len(signals), "signals": signals}
-
-    def _get_candles_range(
+    async def _get_candles_range(
         self, count: int = 60, before_epoch: int | None = None, timeframe: str = "5m"
     ) -> dict:
         count = min(count, 500)
-        # Validate timeframe
         if timeframe not in ("5m", "15m"):
             timeframe = self.decision_timeframe
-        candles = self.repo.get_candles_range(
+        candles = await self.repo.get_candles_range(
             self.symbol, timeframe, count=count, before_epoch=before_epoch
         )
         return {"count": len(candles), "candles": candles, "timeframe": timeframe}
 
-    def _calc_indicator(
+    async def _calc_indicator(
         self,
         name: str,
         params: dict | None = None,
@@ -192,10 +179,9 @@ class ToolDispatcher:
     ) -> dict:
         params = params or {}
         count = min(max(count, 30), 500)
-        # Validate timeframe
         if timeframe not in ("5m", "15m"):
             timeframe = self.decision_timeframe
-        candles = self.repo.get_candles_range(
+        candles = await self.repo.get_candles_range(
             self.symbol, timeframe, count=count, before_epoch=before_epoch
         )
         if len(candles) < 14:

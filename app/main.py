@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
 
     _app_state.collector = CollectorService(_app_state.deriv_client, _app_state.repo)
     await _app_state.collector.start(symbols=[symbol], timeframes=[decision_tf, context_tf])
-    _app_state.agent = AgentService(_app_state.deriv_client, _app_state.repo)
+    _app_state.agent = AgentService(_app_state.deriv_client, _app_state.session_factory)
     logger.info("Application started")
     yield
 

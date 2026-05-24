@@ -6,9 +6,10 @@ from loguru import logger
 from app.collector.deriv_client import TIMEFRAME_TO_GRANULARITY
 from app.events.protocol import EventType
 from app.events.publisher import publish
+from app.signals.repository import SignalRepository
 
 
-async def resolve(client, repo, signal_id, direction, symbol, timeframe,
+async def resolve(client, session_factory, signal_id, direction, symbol, timeframe,
                   entry_candle_time, settle_delay=2):
     try:
         granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe)
@@ -38,9 +39,18 @@ async def resolve(client, repo, signal_id, direction, symbol, timeframe,
             (direction != "CALL" and exit_price < entry_price)
         ) else "loss"
 
-        await repo.update_outcome(signal_id, entry_price, exit_price, outcome)
-        await repo.session.commit()
-        logger.info(f"RESULT #{signal_id} | {direction} | {outcome.upper()} | entry={entry_price} exit={exit_price}")
+        async with session_factory() as session:
+            repo = SignalRepository(session)
+            await repo.update_outcome(signal_id, entry_price, exit_price, outcome)
+            await session.commit()
+
+        delta = exit_price - entry_price
+        delta_pct = (delta / entry_price) * 100
+        icon = "✔" if outcome == "win" else "✘"
+        logger.success(
+            f"{icon} Resultado #{signal_id} | {direction} | {outcome.upper()} | "
+            f"entry={entry_price} exit={exit_price} Δ={delta:+.3f} ({delta_pct:+.3f}%)"
+        )
         publish(EventType.SIGNAL_RESOLVED, {
             "id": signal_id, "outcome": outcome,
             "quote_entry": entry_price, "quote_exit": exit_price,

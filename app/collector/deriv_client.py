@@ -46,7 +46,11 @@ class DerivClient:
                 self._ws = await websockets.connect(url, ping_interval=20, ping_timeout=20)
                 self._listener_task = asyncio.create_task(self._listener())
                 auth = await self._send({"authorize": self.api_token})
-                logger.info(f"Autorizado. Loginid={auth.get('authorize', {}).get('loginid')}")
+                info = auth.get("authorize", {})
+                logger.success(
+                    f"WS conectado e autorizado | loginid={info.get('loginid')} "
+                    f"name={info.get('fullname')} currency={info.get('currency')}"
+                )
                 return
             except Exception as e:
                 logger.error(f"Falha ao conectar: {e}. Retentando em {backoff}s")

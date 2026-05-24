@@ -43,7 +43,7 @@ class Candle(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(String, nullable=False)
     timeframe: Mapped[str] = mapped_column(String, nullable=False)
-    epoch: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    epoch: Mapped[int] = mapped_column(Integer, nullable=False)
     open: Mapped[float] = mapped_column(Float, nullable=False)
     high: Mapped[float] = mapped_column(Float, nullable=False)
     low: Mapped[float] = mapped_column(Float, nullable=False)

@@ -3,11 +3,11 @@ import os
 import time
 import json
 from datetime import datetime, timezone, timedelta
-from typing import TYPE_CHECKING
 
 import httpx
 from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.collector.deriv_client import DerivClient, TIMEFRAME_TO_GRANULARITY
 from app.signals.repository import SignalRepository
@@ -23,19 +23,19 @@ from app.events.publisher import publish
 from app.config import settings
 from app.db.models import BotConfig, IndicatorConfig
 
-if TYPE_CHECKING:
-    from app.signals.repository import SignalRepository as RepoType
-
 BRT = timezone(timedelta(hours=-3))
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_TOOL_TURNS = 5
 MAX_RETRIES = 3
 
+_BB_TO_FLOAT = {"acima": 1.0, "dentro": 0.0, "abaixo": -1.0}
+_EMA_TO_FLOAT = {"acima": 1.0, "abaixo": -1.0}
+
 
 class AgentService:
-    def __init__(self, client: DerivClient, repo: SignalRepository):
+    def __init__(self, client: DerivClient, session_factory: async_sessionmaker):
         self.client = client
-        self.repo = repo
+        self.session_factory = session_factory
         self._running = False
         self._task: asyncio.Task | None = None
         self._last_cycle: datetime | None = None
@@ -70,9 +70,9 @@ class AgentService:
             "uptime": (datetime.now(timezone.utc) - self._start_time).total_seconds() if self._start_time else 0,
         }
 
-    async def _load_config(self) -> dict:
+    async def _load_config(self, repo: SignalRepository) -> dict:
         stmt = select(BotConfig)
-        result = await self.repo.session.execute(stmt)
+        result = await repo.session.execute(stmt)
         configs = result.scalars().all()
         config = {}
         for cfg in configs:
@@ -82,9 +82,9 @@ class AgentService:
                 config[cfg.key] = cfg.value
         return config
 
-    async def _load_indicator_configs(self) -> list:
+    async def _load_indicator_configs(self, repo: SignalRepository) -> list:
         stmt = select(IndicatorConfig)
-        result = await self.repo.session.execute(stmt)
+        result = await repo.session.execute(stmt)
         return result.scalars().all()
 
     async def _loop(self) -> None:
@@ -94,113 +94,120 @@ class AgentService:
                 cycle_id = self._cycle_count
                 cycle_start = datetime.now(BRT)
 
-                config = await self._load_config()
-                indicator_configs = await self._load_indicator_configs()
-                symbol = config.get("symbol", "R_25")
-                decision_tf = config.get("decision_timeframe", "5m")
-                context_tf = config.get("context_timeframe", "15m")
-                min_confidence = float(config.get("min_confidence", 0.50))
+                async with self.session_factory() as session:
+                    repo = SignalRepository(session)
 
-                logger.info(
-                    f"┌─ CICLO #{cycle_id:04d} ─────────────────────────────────────────"
-                )
-                logger.info(
-                    f"│  Iniciado em {cycle_start.strftime('%H:%M:%S')} BRT | "
-                    f"{symbol} | {decision_tf}/{context_tf} | min_conf={min_confidence:.0%}"
-                )
+                    config = await self._load_config(repo)
+                    indicator_configs = await self._load_indicator_configs(repo)
+                    symbol = config.get("symbol", "R_25")
+                    decision_tf = config.get("decision_timeframe", "5m")
+                    context_tf = config.get("context_timeframe", "15m")
+                    min_confidence = float(config.get("min_confidence", 0.50))
 
-                await self.client.ensure_connected()
-                publish(EventType.STATUS, {"status": "waiting", "detail": "Aguardando candle"})
-                await self._wait_for_next_candle_close(config)
-                settle = int(config.get("candle_settle_delay", 2))
-                if settle > 0:
-                    await asyncio.sleep(settle)
-
-                publish(EventType.STATUS, {"status": "analyzing", "detail": "Analisando mercado"})
-                market_data = await self._fetch_and_analyze(config, indicator_configs)
-                m5 = market_data["m5_indicators"]
-                m15 = market_data["m15_indicators"]
-                pre = market_data["pre_analysis"]
-
-                logger.info(
-                    f"│  [M5]  RSI={m5.get('rsi', 0):.1f}  MACD_h={m5.get('macd_histogram', 0):.4f}  "
-                    f"BB_pos={m5.get('bb_position', 0):.2f}  ADX={m5.get('adx', 0):.1f}  ATR%={m5.get('atr_pct', 0):.3f}"
-                )
-                logger.info(
-                    f"│  [M15] RSI={m15.get('rsi', 0):.1f}  MACD_h={m15.get('macd_histogram', 0):.4f}  "
-                    f"BB_pos={m15.get('bb_position', 0):.2f}  ADX={m15.get('adx', 0):.1f}  EMA50_dist={m15.get('price_vs_ema50', 0):.4f}"
-                )
-                logger.info(
-                    f"│  [PRE] regime={pre.get('regime', '-')}  "
-                    f"m15_bias={pre.get('m15_bias', {}).get('bias', '-')}  "
-                    f"confluência=CALL:{pre.get('confluence', {}).get('call_signals', 0)} "
-                    f"PUT:{pre.get('confluence', {}).get('put_signals', 0)}  "
-                    f"estratégia={pre.get('suggested_strategy', '-')}"
-                )
-
-                publish(EventType.MARKET, {
-                    "m5_indicators": m5,
-                    "m15_indicators": m15,
-                    "pre_analysis": pre,
-                    "last_candle_time": market_data.get("last_candle_time", ""),
-                    "next_entry_time": market_data.get("next_entry_time", ""),
-                })
-
-                await self.repo.upsert_candles(market_data["m5_candles"], symbol, decision_tf)
-                await self.repo.upsert_candles(market_data["m15_candles"], symbol, context_tf)
-
-                result = await self._run_agent(config, market_data)
-                confidence = result["confidence"]
-                direction = result["direction"]
-
-                publish(EventType.LLM_RESPONSE, {
-                    "direction": direction,
-                    "confidence": confidence,
-                })
-
-                signal_id = None
-                signal_status = ""
-                if confidence >= min_confidence and direction != "NONE":
-                    signal_data = SignalCreate(
-                        symbol=symbol, timeframe=decision_tf,
-                        direction=direction, confidence=confidence,
-                        duration=int(config.get("duration", 300)),
-                        rsi=m5.get("rsi"),
-                        bb_position=m5.get("bb_position"),
-                        adx=m5.get("adx"),
-                        atr_pct=m5.get("atr_pct"),
-                        price_vs_ema50=m5.get("price_vs_ema50"),
-                        macd_line=m5.get("macd_line"),
-                        macd_signal=m5.get("macd_signal"),
-                        macd_histogram=m5.get("macd_histogram"),
-                        regime=pre.get("regime"),
-                        time_window=pre.get("time_window", {}).get("window"),
-                        m15_bias=pre.get("m15_bias", {}).get("bias"),
-                        confluence_score=max(
-                            pre.get("confluence", {}).get("call_signals", 0),
-                            pre.get("confluence", {}).get("put_signals", 0),
-                        ),
-                        strategy=pre.get("suggested_strategy"),
-                        entry_candle_time=market_data.get("next_entry_time"),
+                    logger.info(
+                        f"┌─ CICLO #{cycle_id:04d} ─────────────────────────────────────────"
                     )
-                    signal_id = await self.repo.insert_signal(signal_data)
-                    await self.repo.session.commit()
-                    signal_status = f"EMITIDO #{signal_id}"
-                    publish(EventType.SIGNAL_EMITTED, {
-                        "id": signal_id, "direction": direction,
-                        "confidence": confidence, "symbol": symbol,
-                        "entry_candle_time": market_data.get("next_entry_time"),
+                    logger.info(
+                        f"│  Iniciado em {cycle_start.strftime('%H:%M:%S')} BRT | "
+                        f"{symbol} | {decision_tf}/{context_tf} | min_conf={min_confidence:.0%}"
+                    )
+
+                    await self.client.ensure_connected()
+                    publish(EventType.STATUS, {"status": "waiting", "detail": "Aguardando candle"})
+                    await self._wait_for_next_candle_close(config)
+                    settle = int(config.get("candle_settle_delay", 2))
+                    if settle > 0:
+                        await asyncio.sleep(settle)
+
+                    publish(EventType.STATUS, {"status": "analyzing", "detail": "Analisando mercado"})
+                    market_data = await self._fetch_and_analyze(config, indicator_configs)
+                    m5 = market_data["m5_indicators"]
+                    m15 = market_data["m15_indicators"]
+                    pre = market_data["pre_analysis"]
+
+                    _m5_macd = m5.get('macd_histogram')
+                    _m15_macd = m15.get('macd_histogram')
+                    _m5_macd_s = f"{_m5_macd:.4f}" if _m5_macd is not None else "-"
+                    _m15_macd_s = f"{_m15_macd:.4f}" if _m15_macd is not None else "-"
+                    logger.info(
+                        f"│  [M5]  RSI={m5.get('rsi', 0):.1f}  MACD_h={_m5_macd_s}  "
+                        f"BB_pos={m5.get('bb_position', '-')}  ADX={m5.get('adx', 0):.1f}  ATR%={m5.get('atr_pct', 0):.3f}"
+                    )
+                    logger.info(
+                        f"│  [M15] RSI={m15.get('rsi', 0):.1f}  MACD_h={_m15_macd_s}  "
+                        f"BB_pos={m15.get('bb_position', '-')}  ADX={m15.get('adx', 0):.1f}  EMA50={m15.get('price_vs_ema50', '-')}"
+                    )
+                    logger.info(
+                        f"│  [PRE] regime={pre.get('regime', '-')}  "
+                        f"m15_bias={pre.get('m15_bias', {}).get('bias', '-')}  "
+                        f"confluência=CALL:{pre.get('confluence', {}).get('call_signals', 0)} "
+                        f"PUT:{pre.get('confluence', {}).get('put_signals', 0)}  "
+                        f"estratégia={pre.get('suggested_strategy', '-')}"
+                    )
+
+                    publish(EventType.MARKET, {
+                        "m5_indicators": m5,
+                        "m15_indicators": m15,
+                        "pre_analysis": pre,
+                        "last_candle_time": market_data.get("last_candle_time", ""),
+                        "next_entry_time": market_data.get("next_entry_time", ""),
                     })
-                    from app.signals.verifier import resolve
-                    asyncio.create_task(resolve(
-                        self.client, self.repo, signal_id, direction,
-                        symbol, decision_tf,
-                        market_data.get("next_entry_time"),
-                        settle_delay=int(config.get("candle_settle_delay", 2)),
-                    ))
-                else:
-                    signal_status = f"NÃO EMITIDO (conf={confidence:.0%} < mín={min_confidence:.0%})"
-                    publish(EventType.STATUS, {"status": "idle", "detail": f"Confiança insuficiente: {confidence:.0%}"})
+
+                    await repo.upsert_candles(market_data["m5_candles"], symbol, decision_tf)
+                    await repo.upsert_candles(market_data["m15_candles"], symbol, context_tf)
+
+                    result = await self._run_agent(config, market_data, repo)
+                    confidence = result["confidence"]
+                    direction = result["direction"]
+
+                    publish(EventType.LLM_RESPONSE, {
+                        "direction": direction,
+                        "confidence": confidence,
+                    })
+
+                    signal_id = None
+                    signal_status = ""
+                    if confidence >= min_confidence and direction != "NONE":
+                        signal_data = SignalCreate(
+                            symbol=symbol, timeframe=decision_tf,
+                            direction=direction, confidence=confidence,
+                            duration=int(config.get("duration", 300)),
+                            rsi=m5.get("rsi"),
+                            bb_position=_BB_TO_FLOAT.get(m5.get("bb_position"), None),
+                            adx=m5.get("adx"),
+                            atr_pct=m5.get("atr_pct"),
+                            price_vs_ema50=_EMA_TO_FLOAT.get(m5.get("price_vs_ema50"), None),
+                            macd_line=m5.get("macd_line"),
+                            macd_signal=m5.get("macd_signal"),
+                            macd_histogram=m5.get("macd_histogram"),
+                            regime=pre.get("regime"),
+                            time_window=pre.get("time_window", {}).get("window"),
+                            m15_bias=pre.get("m15_bias", {}).get("bias"),
+                            confluence_score=max(
+                                pre.get("confluence", {}).get("call_signals", 0),
+                                pre.get("confluence", {}).get("put_signals", 0),
+                            ),
+                            strategy=pre.get("suggested_strategy"),
+                            entry_candle_time=market_data.get("next_entry_time"),
+                        )
+                        signal_id = await repo.insert_signal(signal_data)
+                        await session.commit()
+                        signal_status = f"EMITIDO #{signal_id}"
+                        publish(EventType.SIGNAL_EMITTED, {
+                            "id": signal_id, "direction": direction,
+                            "confidence": confidence, "symbol": symbol,
+                            "entry_candle_time": market_data.get("next_entry_time"),
+                        })
+                        from app.signals.verifier import resolve
+                        asyncio.create_task(resolve(
+                            self.client, self.session_factory, signal_id, direction,
+                            symbol, decision_tf,
+                            market_data.get("next_entry_time"),
+                            settle_delay=int(config.get("candle_settle_delay", 2)),
+                        ))
+                    else:
+                        signal_status = f"NÃO EMITIDO (conf={confidence:.0%} < mín={min_confidence:.0%})"
+                        publish(EventType.STATUS, {"status": "idle", "detail": f"Confiança insuficiente: {confidence:.0%}"})
 
                 cycle_elapsed = (datetime.now(BRT) - cycle_start).total_seconds()
                 self._last_cycle = datetime.now(timezone.utc)
@@ -271,7 +278,7 @@ class AgentService:
             "next_entry_time": next_entry_dt.isoformat(),
         }
 
-    async def _run_agent(self, config: dict, market_data: dict) -> dict:
+    async def _run_agent(self, config: dict, market_data: dict, repo: SignalRepository) -> dict:
         decision_tf = config.get("decision_timeframe", "5m")
         context_tf = config.get("context_timeframe", "15m")
         system_prompt = build_system_prompt(config)
@@ -279,7 +286,7 @@ class AgentService:
             market_data["m15_indicators"], market_data["pre_analysis"],
             market_data.get("last_candle_time", ""), market_data.get("next_entry_time", ""))
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
-        dispatcher = ToolDispatcher(self.repo, config["symbol"], decision_tf, context_tf)
+        dispatcher = ToolDispatcher(repo, config["symbol"], decision_tf, context_tf)
         content = ""
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         async with httpx.AsyncClient() as http:
@@ -313,7 +320,7 @@ class AgentService:
                         args = json.loads(tc["function"].get("arguments", "{}"))
                     except json.JSONDecodeError:
                         args = {}
-                    result = dispatcher.dispatch(tool_name, args)
+                    result = await dispatcher.dispatch(tool_name, args)
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result, ensure_ascii=False)})
                 if turn == MAX_TOOL_TURNS:
                     payload2 = {"model": config["model"], "messages": messages}

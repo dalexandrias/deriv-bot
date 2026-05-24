@@ -51,6 +51,7 @@ class CollectorService:
                             candles = await self.client.get_candles(symbol, tf, count=5)
                             await self.repo.upsert_candles(candles, symbol, tf)
                             await self.repo.session.commit()
+                            logger.success(f"Candles salvas | {symbol}/{tf} | {len(candles)} candles | último epoch={candles[-1]['time'] if candles else '-'}")
                         except Exception as e:
                             logger.error(f"Erro ao coletar {symbol}/{tf}: {e}")
 
