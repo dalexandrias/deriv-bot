@@ -43,22 +43,37 @@ export function useSSE() {
           const event: SSEEvent = JSON.parse(e.data)
           const s = useEventsStore.getState()
           switch (event.type) {
-            case 'status':
+            case 'status': {
               s.setBotStatus(event.data as any)
               qc.invalidateQueries({ queryKey: ['bot', 'status'] })
               break
+            }
             case 'market':
               s.setMarket(event.data as any)
               break
-            case 'signal_emitted':
-              s.upsertSignal(event.data as any)
+            case 'signal_emitted': {
+              const d = event.data as any
+              s.upsertSignal(d)
+              s.addLog({ message: `SINAL #${d.id} ${d.direction} conf=${Math.round((d.confidence ?? 0) * 100)}%`, level: 'info' })
               qc.invalidateQueries({ queryKey: ['signals'] })
               break
-            case 'signal_resolved':
-              s.upsertSignal(event.data as any)
+            }
+            case 'signal_resolved': {
+              const d = event.data as any
+              s.upsertSignal(d)
+              const lvl = d.outcome === 'WIN' ? 'info' : 'warning'
+              const entryStr = d.quote_entry != null ? Number(d.quote_entry).toFixed(2) : '?'
+              const exitStr = d.quote_exit != null ? Number(d.quote_exit).toFixed(2) : '?'
+              s.addLog({ message: `RESULT #${d.id} ${(d.outcome ?? '?').toUpperCase()} entrada=${entryStr} saída=${exitStr}`, level: lvl })
               qc.invalidateQueries({ queryKey: ['signals'] })
               qc.invalidateQueries({ queryKey: ['signals', 'stats'] })
               break
+            }
+            case 'llm_response': {
+              const d = event.data as any
+              s.addLog({ message: `LLM: ${d.direction ?? '?'} conf=${Math.round((d.confidence ?? 0) * 100)}%`, level: 'info' })
+              break
+            }
             case 'log':
             case 'error':
               s.addLog(event.data as any)

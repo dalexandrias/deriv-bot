@@ -54,7 +54,7 @@ export const useEventsStore = create<EventsState>((set) => ({
           id: logId++,
           message: (p as SSELogPayload).message ?? (p as SSEErrorPayload).message,
           level: (p as SSELogPayload).level ?? 'error',
-          timestamp: new Date().toISOString(),
+          timestamp: (p as any).timestamp ?? new Date().toISOString(),
         },
         ...s.logs.slice(0, 499), // ring buffer of 500
       ],

@@ -94,7 +94,7 @@ export interface SSEMarketPayload {
 }
 export interface SSESignalPayload extends Partial<Signal> { id: number }
 export interface SSEErrorPayload { message: string; detail?: string }
-export interface SSELogPayload { message: string; level?: string }
+export interface SSELogPayload { message: string; level?: string; timestamp?: string }
 
 export interface SSEEvent {
   type: SSEEventType
