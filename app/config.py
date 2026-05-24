@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     deriv_api_token: str = Field(default="")
     deriv_app_id: str = Field(default="1089")
     openrouter_api_key: str = Field(default="")
+    cors_origins: list[str] = Field(default=["http://localhost:5173"])
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
