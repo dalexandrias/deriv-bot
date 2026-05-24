@@ -1,13 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { signalsApi } from '@/api/endpoints/signals'
 import { MetricCard } from '@/components/domain/MetricCard'
+import { useEventsStore } from '@/store/events'
 
 export default function Overview() {
   const { data: stats } = useQuery({
     queryKey: ['signals', 'stats'],
     queryFn: signalsApi.getStats,
-    refetchInterval: 10000,
+    refetchInterval: 15000,
   })
+  const market = useEventsStore((s) => s.market)
 
   return (
     <div className="space-y-6">
@@ -33,6 +35,20 @@ export default function Overview() {
           deltaType="neutral"
         />
       </div>
+      {market && (
+        <div className="grid grid-cols-2 gap-4">
+          <MetricCard
+            label="Última vela"
+            value={market.last_candle_time ?? '—'}
+            deltaType="neutral"
+          />
+          <MetricCard
+            label="Próxima entrada"
+            value={market.next_entry_time ?? '—'}
+            deltaType="neutral"
+          />
+        </div>
+      )}
     </div>
   )
 }

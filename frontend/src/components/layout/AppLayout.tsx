@@ -1,8 +1,10 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
+import { useSSE } from '@/hooks/useSSE'
 
 export function AppLayout() {
+  useSSE()
   return (
     <div className="flex h-screen bg-lumen-bg">
       <Sidebar />
