@@ -76,10 +76,10 @@ export default function Market() {
                 <tr key={key} className="border-b border-lumen-border last:border-0 hover:bg-lumen-surface-2 transition-colors">
                   <td className="px-4 py-3 text-lumen-body font-medium">{INDICATOR_LABELS[key] ?? key}</td>
                   <td className="px-4 py-3 text-right font-mono tabular-nums text-lumen-body">
-                    {m5 != null ? m5.toFixed(4) : '—'}
+                    {m5 != null ? Number(m5).toFixed(4) : '—'}
                   </td>
                   <td className="px-4 py-3 text-right font-mono tabular-nums text-lumen-body">
-                    {m15 != null ? m15.toFixed(4) : '—'}
+                    {m15 != null ? Number(m15).toFixed(4) : '—'}
                   </td>
                 </tr>
               )
