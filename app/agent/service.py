@@ -40,6 +40,7 @@ class AgentService:
         self._task: asyncio.Task | None = None
         self._last_cycle: datetime | None = None
         self._start_time: datetime | None = None
+        self._cycle_count: int = 0
 
     async def start(self) -> None:
         self._running = True
@@ -89,8 +90,24 @@ class AgentService:
     async def _loop(self) -> None:
         while self._running:
             try:
+                self._cycle_count += 1
+                cycle_id = self._cycle_count
+                cycle_start = datetime.now(BRT)
+
                 config = await self._load_config()
                 indicator_configs = await self._load_indicator_configs()
+                symbol = config.get("symbol", "R_25")
+                decision_tf = config.get("decision_timeframe", "5m")
+                context_tf = config.get("context_timeframe", "15m")
+                min_confidence = float(config.get("min_confidence", 0.50))
+
+                logger.info(
+                    f"┌─ CICLO #{cycle_id:04d} ─────────────────────────────────────────"
+                )
+                logger.info(
+                    f"│  Iniciado em {cycle_start.strftime('%H:%M:%S')} BRT | "
+                    f"{symbol} | {decision_tf}/{context_tf} | min_conf={min_confidence:.0%}"
+                )
 
                 await self.client.ensure_connected()
                 publish(EventType.STATUS, {"status": "waiting", "detail": "Aguardando candle"})
@@ -101,72 +118,103 @@ class AgentService:
 
                 publish(EventType.STATUS, {"status": "analyzing", "detail": "Analisando mercado"})
                 market_data = await self._fetch_and_analyze(config, indicator_configs)
+                m5 = market_data["m5_indicators"]
+                m15 = market_data["m15_indicators"]
+                pre = market_data["pre_analysis"]
+
+                logger.info(
+                    f"│  [M5]  RSI={m5.get('rsi', 0):.1f}  MACD_h={m5.get('macd_histogram', 0):.4f}  "
+                    f"BB_pos={m5.get('bb_position', 0):.2f}  ADX={m5.get('adx', 0):.1f}  ATR%={m5.get('atr_pct', 0):.3f}"
+                )
+                logger.info(
+                    f"│  [M15] RSI={m15.get('rsi', 0):.1f}  MACD_h={m15.get('macd_histogram', 0):.4f}  "
+                    f"BB_pos={m15.get('bb_position', 0):.2f}  ADX={m15.get('adx', 0):.1f}  EMA50_dist={m15.get('price_vs_ema50', 0):.4f}"
+                )
+                logger.info(
+                    f"│  [PRE] regime={pre.get('regime', '-')}  "
+                    f"m15_bias={pre.get('m15_bias', {}).get('bias', '-')}  "
+                    f"confluência=CALL:{pre.get('confluence', {}).get('call_signals', 0)} "
+                    f"PUT:{pre.get('confluence', {}).get('put_signals', 0)}  "
+                    f"estratégia={pre.get('suggested_strategy', '-')}"
+                )
+
                 publish(EventType.MARKET, {
-                    "m5_indicators": market_data["m5_indicators"],
-                    "m15_indicators": market_data["m15_indicators"],
-                    "pre_analysis": market_data["pre_analysis"],
+                    "m5_indicators": m5,
+                    "m15_indicators": m15,
+                    "pre_analysis": pre,
+                    "last_candle_time": market_data.get("last_candle_time", ""),
+                    "next_entry_time": market_data.get("next_entry_time", ""),
                 })
 
-                decision_tf = config.get("decision_timeframe", "5m")
-                context_tf = config.get("context_timeframe", "15m")
-                await self.repo.upsert_candles(market_data["m5_candles"], config["symbol"], decision_tf)
-                await self.repo.upsert_candles(market_data["m15_candles"], config["symbol"], context_tf)
+                await self.repo.upsert_candles(market_data["m5_candles"], symbol, decision_tf)
+                await self.repo.upsert_candles(market_data["m15_candles"], symbol, context_tf)
 
                 result = await self._run_agent(config, market_data)
-                publish(EventType.LLM_RESPONSE, {
-                    "direction": result["direction"],
-                    "confidence": result["confidence"],
-                })
-
                 confidence = result["confidence"]
                 direction = result["direction"]
-                min_confidence = float(config.get("min_confidence", 0.50))
 
+                publish(EventType.LLM_RESPONSE, {
+                    "direction": direction,
+                    "confidence": confidence,
+                })
+
+                signal_id = None
+                signal_status = ""
                 if confidence >= min_confidence and direction != "NONE":
                     signal_data = SignalCreate(
-                        symbol=config["symbol"], timeframe=decision_tf,
+                        symbol=symbol, timeframe=decision_tf,
                         direction=direction, confidence=confidence,
                         duration=int(config.get("duration", 300)),
-                        rsi=market_data["m5_indicators"].get("rsi"),
-                        bb_position=market_data["m5_indicators"].get("bb_position"),
-                        adx=market_data["m5_indicators"].get("adx"),
-                        atr_pct=market_data["m5_indicators"].get("atr_pct"),
-                        price_vs_ema50=market_data["m5_indicators"].get("price_vs_ema50"),
-                        macd_line=market_data["m5_indicators"].get("macd_line"),
-                        macd_signal=market_data["m5_indicators"].get("macd_signal"),
-                        macd_histogram=market_data["m5_indicators"].get("macd_histogram"),
-                        regime=market_data["pre_analysis"].get("regime"),
-                        time_window=market_data["pre_analysis"].get("time_window", {}).get("window"),
-                        m15_bias=market_data["pre_analysis"].get("m15_bias", {}).get("bias"),
+                        rsi=m5.get("rsi"),
+                        bb_position=m5.get("bb_position"),
+                        adx=m5.get("adx"),
+                        atr_pct=m5.get("atr_pct"),
+                        price_vs_ema50=m5.get("price_vs_ema50"),
+                        macd_line=m5.get("macd_line"),
+                        macd_signal=m5.get("macd_signal"),
+                        macd_histogram=m5.get("macd_histogram"),
+                        regime=pre.get("regime"),
+                        time_window=pre.get("time_window", {}).get("window"),
+                        m15_bias=pre.get("m15_bias", {}).get("bias"),
                         confluence_score=max(
-                            market_data["pre_analysis"].get("confluence", {}).get("call_signals", 0),
-                            market_data["pre_analysis"].get("confluence", {}).get("put_signals", 0),
+                            pre.get("confluence", {}).get("call_signals", 0),
+                            pre.get("confluence", {}).get("put_signals", 0),
                         ),
-                        strategy=market_data["pre_analysis"].get("suggested_strategy"),
+                        strategy=pre.get("suggested_strategy"),
                         entry_candle_time=market_data.get("next_entry_time"),
                     )
                     signal_id = await self.repo.insert_signal(signal_data)
                     await self.repo.session.commit()
+                    signal_status = f"EMITIDO #{signal_id}"
                     publish(EventType.SIGNAL_EMITTED, {
                         "id": signal_id, "direction": direction,
-                        "confidence": confidence, "symbol": config["symbol"],
+                        "confidence": confidence, "symbol": symbol,
                         "entry_candle_time": market_data.get("next_entry_time"),
                     })
                     from app.signals.verifier import resolve
                     asyncio.create_task(resolve(
                         self.client, self.repo, signal_id, direction,
-                        config["symbol"], decision_tf,
+                        symbol, decision_tf,
                         market_data.get("next_entry_time"),
                         settle_delay=int(config.get("candle_settle_delay", 2)),
                     ))
                 else:
+                    signal_status = f"NÃO EMITIDO (conf={confidence:.0%} < mín={min_confidence:.0%})"
                     publish(EventType.STATUS, {"status": "idle", "detail": f"Confiança insuficiente: {confidence:.0%}"})
 
+                cycle_elapsed = (datetime.now(BRT) - cycle_start).total_seconds()
                 self._last_cycle = datetime.now(timezone.utc)
+
+                logger.success(
+                    f"│  [DECISÃO] {direction}  confiança={confidence:.0%}  sinal={signal_status}"
+                )
+                logger.success(
+                    f"└─ CICLO #{cycle_id:04d} CONCLUÍDO em {cycle_elapsed:.1f}s ──────────────────────"
+                )
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                logger.exception(f"Erro durante ciclo do agente: {e}")
+                logger.exception(f"Erro durante ciclo #{self._cycle_count} do agente: {e}")
                 publish(EventType.ERROR, {"message": str(e)})
                 await asyncio.sleep(10)
 
@@ -177,7 +225,17 @@ class AgentService:
         next_close = (int(now / granularity) + 1) * granularity
         wait_secs = next_close - now
         logger.info(f"Aguardando {wait_secs:.1f}s até fechamento do próximo candle ({tf})...")
-        await asyncio.sleep(wait_secs)
+        remaining = wait_secs
+        heartbeat_interval = 20.0
+        while remaining > 0:
+            chunk = min(heartbeat_interval, remaining)
+            await asyncio.sleep(chunk)
+            remaining -= chunk
+            if remaining > 0:
+                publish(EventType.STATUS, {
+                    "status": "waiting",
+                    "detail": f"Próximo candle em {int(remaining)}s",
+                })
 
     async def _fetch_and_analyze(self, config: dict, indicator_configs: list) -> dict:
         decision_tf = config.get("decision_timeframe", "5m")

@@ -41,7 +41,9 @@ export interface SignalStats {
 }
 
 export interface BotStatus {
-  status: string
+  running: boolean
+  last_cycle: string | null
+  uptime: number
 }
 
 export interface BotConfig {

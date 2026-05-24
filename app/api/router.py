@@ -22,8 +22,11 @@ async def event_stream():
     async def generate():
         try:
             while True:
-                event = await queue.get()
-                yield {"data": event.to_json()}
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield {"data": event.to_json()}
+                except asyncio.TimeoutError:
+                    yield {"comment": "keepalive"}
         except asyncio.CancelledError:
             bus.unsubscribe(queue)
 

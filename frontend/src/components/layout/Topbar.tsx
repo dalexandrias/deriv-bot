@@ -11,7 +11,7 @@ export function Topbar() {
   const { data: statusData } = useQuery({
     queryKey: ['bot', 'status'],
     queryFn: botApi.getStatus,
-    refetchInterval: connected ? false : 5000, // stop polling when SSE is alive
+    refetchInterval: 5000,
   })
 
   const { data: health } = useQuery({
@@ -20,7 +20,8 @@ export function Topbar() {
     refetchInterval: 15000,
   })
 
-  const botStatusStr = sseStatus?.status ?? statusData?.status ?? 'unknown'
+  // SSE status events carry { status: string } — prefer SSE, fall back to REST running boolean
+  const botStatusStr = sseStatus?.status ?? (statusData?.running ? 'running' : statusData != null ? 'stopped' : 'unknown')
   const dbOk = health?.db === 'ok'
   const wsOk = health?.deriv_ws === 'ok'
 

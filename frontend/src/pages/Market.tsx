@@ -1,4 +1,6 @@
 import { useEventsStore } from '@/store/events'
+import { useQuery } from '@tanstack/react-query'
+import { botApi } from '@/api/endpoints/bot'
 
 const INDICATOR_LABELS: Record<string, string> = {
   rsi: 'RSI',
@@ -13,16 +15,30 @@ const INDICATOR_LABELS: Record<string, string> = {
 
 export default function Market() {
   const market = useEventsStore((s) => s.market)
+  const sseStatus = useEventsStore((s) => s.botStatus)
+  const { data: botStatus } = useQuery({
+    queryKey: ['bot', 'status'],
+    queryFn: botApi.getStatus,
+    refetchInterval: 5000,
+  })
 
   if (!market) {
+    const isWaiting = sseStatus?.status === 'waiting' || (botStatus?.running && !botStatus.last_cycle)
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-display font-semibold text-lumen-text">Mercado</h1>
           <p className="text-sm text-lumen-muted mt-1">Indicadores em tempo real via SSE.</p>
         </div>
-        <div className="bg-lumen-surface border border-lumen-border rounded-lumen p-8 text-center text-lumen-muted text-sm">
-          Aguardando dados de mercado...
+        <div className="bg-lumen-surface border border-lumen-border rounded-lumen p-8 text-center space-y-2">
+          <div className="text-lumen-muted text-sm">
+            {isWaiting
+              ? 'Bot aguardando fechamento do próximo candle de 5m...'
+              : 'Aguardando primeiro evento de mercado via SSE.'}
+          </div>
+          {sseStatus?.detail && (
+            <div className="text-xs text-lumen-faint font-mono">{sseStatus.detail}</div>
+          )}
         </div>
       </div>
     )

@@ -57,7 +57,7 @@ function BotTab() {
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const isRunning = status?.status === 'running' || status?.status === 'analyzing'
+  const isRunning = status?.running === true
 
   const fields = [
     { key: 'symbol', label: 'Símbolo' },
@@ -78,7 +78,10 @@ function BotTab() {
         <div>
           <div className="font-medium text-lumen-text text-sm">Controle do Bot</div>
           <div className="text-xs text-lumen-muted mt-0.5">
-            Status atual: <span className="font-mono">{status?.status ?? '—'}</span>
+            Status: <span className="font-mono">{status?.running ? 'Rodando' : status != null ? 'Parado' : '—'}</span>
+            {status?.uptime != null && status.uptime > 0 && (
+              <span className="ml-2 text-lumen-faint">uptime {Math.floor(status.uptime / 60)}min</span>
+            )}
           </div>
         </div>
         <div className="flex gap-3">
