@@ -9,6 +9,7 @@ import History from '@/pages/History'
 import Stats from '@/pages/Stats'
 import Logs from '@/pages/Logs'
 import Settings from '@/pages/Settings'
+import Candles from '@/pages/Candles'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 5000 } },
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="stats" element={<Stats />} />
             <Route path="logs" element={<Logs />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="candles" element={<Candles />} />
           </Route>
         </Routes>
       </BrowserRouter>

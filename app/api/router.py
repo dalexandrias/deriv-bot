@@ -3,7 +3,7 @@ import asyncio
 from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
 
-from app.api import bot, collector, signals, indicators, health
+from app.api import bot, collector, signals, indicators, health, candles
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(bot.router)
@@ -11,6 +11,7 @@ router.include_router(collector.router)
 router.include_router(signals.router)
 router.include_router(indicators.router)
 router.include_router(health.router)
+router.include_router(candles.router)
 
 
 @router.get("/events/stream")

@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, TrendingUp, Zap, History, BarChart2, ScrollText, Settings
+  LayoutDashboard, TrendingUp, Zap, History, BarChart2, ScrollText, Settings, CandlestickChart
 } from 'lucide-react'
 
 const nav = [
@@ -8,6 +8,7 @@ const nav = [
   { to: '/market',    label: 'Mercado',    icon: TrendingUp },
   { to: '/signals',   label: 'Sinais',     icon: Zap },
   { to: '/history',   label: 'Histórico',  icon: History },
+  { to: '/candles',   label: 'Candles',    icon: CandlestickChart },
   { to: '/stats',     label: 'Stats',      icon: BarChart2 },
   { to: '/logs',      label: 'Logs',       icon: ScrollText },
   { to: '/settings',  label: 'Configurar', icon: Settings },

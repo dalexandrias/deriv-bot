@@ -66,6 +66,16 @@ export interface CollectorStatus {
   timeframes: string[]
 }
 
+export interface Candle {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  symbol: string
+  timeframe: string
+}
+
 export interface HealthStatus {
   db: 'ok' | 'error'
   deriv_ws: 'ok' | 'disconnected'
