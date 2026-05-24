@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --lumen-primary:        #3B5BDB;
+  --lumen-primary-hover:  #324CC4;
+  --lumen-primary-soft:   #EEF2FF;
+  --lumen-primary-ring:   #C7D2FE;
+  --lumen-bg:             #F8FAFC;
+  --lumen-surface:        #FFFFFF;
+  --lumen-surface-2:      #F1F5F9;
+  --lumen-border:         #E2E8F0;
+  --lumen-border-strong:  #CBD5E1;
+  --lumen-text:           #0F172A;
+  --lumen-text-body:      #334155;
+  --lumen-text-muted:     #64748B;
+  --lumen-text-faint:     #94A3B8;
+  --lumen-up:             #16A34A;
+  --lumen-up-soft:        #DCFCE7;
+  --lumen-down:           #DC2626;
+  --lumen-down-soft:      #FEE2E2;
+  --lumen-live:           #16A34A;
+  --lumen-paused:         #D97706;
+  --lumen-error:          #DC2626;
+  --lumen-font-mono:      'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --lumen-shadow-sm:      0 1px 2px rgba(15, 23, 42, 0.04);
+  --lumen-shadow:         0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --lumen-shadow-lg:      0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #F8FAFC;
+  color: #334155;
+}
+
+.font-mono, [class*="font-mono"] {
+  font-variant-numeric: tabular-nums;
+}
