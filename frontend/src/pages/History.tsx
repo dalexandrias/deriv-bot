@@ -98,7 +98,7 @@ export default function History() {
                 return (
                   <tr key={s.id} className="border-b border-lumen-border last:border-0 hover:bg-lumen-surface-2 transition-colors">
                     <td className="px-3 py-2.5 font-mono tabular-nums text-xs text-lumen-muted whitespace-nowrap">
-                      {new Date(s.created_at).toLocaleString('pt-BR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      {new Date(s.entry_candle_time ?? s.created_at).toLocaleString('pt-BR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="px-3 py-2.5 font-medium text-lumen-text">{s.symbol}</td>
                     <td className="px-3 py-2.5 text-lumen-muted">{s.timeframe}</td>

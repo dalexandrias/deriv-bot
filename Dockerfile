@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python app/db/ensure_baseline.py && alembic upgrade head && uvicorn app.main:api --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python app/db/ensure_baseline.py && alembic upgrade head && uvicorn app.main:api --host 0.0.0.0 --port 8000 --no-access-log"]
