@@ -1,11 +1,37 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
+import * as Popover from '@radix-ui/react-popover'
+import { HelpCircle } from 'lucide-react'
 import { botApi } from '@/api/endpoints/bot'
 import { indicatorsApi } from '@/api/endpoints/indicators'
 import { collectorApi } from '@/api/endpoints/collector'
 import { toast } from 'sonner'
 import type { IndicatorConfig } from '@/api/types'
+
+// ─── Parameter Help Component ─────────────────────────────────────────────────
+
+function ParamHelp({ title, description }: { title: string; description: string }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center w-4 h-4 ml-1.5 text-lumen-muted hover:text-lumen-body transition-colors rounded-full hover:bg-lumen-surface-2"
+          title={title}
+        >
+          <HelpCircle size={14} />
+        </button>
+      </Popover.Trigger>
+      <Popover.Content className="bg-lumen-surface border border-lumen-border rounded-lumen p-3 shadow-lumen z-50 max-w-xs" side="right" sideOffset={8}>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-lumen-text">{title}</p>
+          <p className="text-xs text-lumen-muted leading-relaxed">{description}</p>
+        </div>
+      </Popover.Content>
+    </Popover.Root>
+  )
+}
 
 // ─── Bot Tab ──────────────────────────────────────────────────────────────────
 
@@ -60,15 +86,60 @@ function BotTab() {
   const isRunning = status?.running === true
 
   const fields = [
-    { key: 'symbol', label: 'Símbolo' },
-    { key: 'decision_timeframe', label: 'Timeframe Decisão' },
-    { key: 'context_timeframe', label: 'Timeframe Contexto' },
-    { key: 'loop_interval', label: 'Intervalo (s)' },
-    { key: 'duration', label: 'Duração Operação (s)' },
-    { key: 'min_confidence', label: 'Confiança Mínima' },
-    { key: 'model', label: 'Modelo LLM' },
-    { key: 'candle_settle_delay', label: 'Delay Vela (s)' },
-    { key: 'candles_count', label: 'Qtd. Velas' },
+    {
+      key: 'symbol',
+      label: 'Símbolo',
+      description: 'Símbolo do ativo para análise e operações',
+      detail: 'Exemplo: R_25, R_50, R_100. Define qual mercado o bot monitora e opera.',
+    },
+    {
+      key: 'decision_timeframe',
+      label: 'Timeframe Decisão',
+      description: 'Timeframe principal para análise técnica',
+      detail: 'O bot analisa velas deste período para tomar decisões de entrada. Exemplo: 5m, 15m, 1h.',
+    },
+    {
+      key: 'context_timeframe',
+      label: 'Timeframe Contexto',
+      description: 'Timeframe secundário para contexto de mercado',
+      detail: 'Usado para entender a tendência maior antes de operar no timeframe de decisão. Deve ser maior que o timeframe de decisão.',
+    },
+    {
+      key: 'loop_interval',
+      label: 'Intervalo (s)',
+      description: 'Intervalo entre cada ciclo do bot',
+      detail: 'Define com que frequência o bot analisa o mercado. Valor menor = mais análises por hora.',
+    },
+    {
+      key: 'duration',
+      label: 'Duração Operação (s)',
+      description: 'Duração de cada operação aberta',
+      detail: 'Após este tempo em segundos, a posição é encerrada automaticamente.',
+    },
+    {
+      key: 'min_confidence',
+      label: 'Confiança Mínima',
+      description: 'Confiança mínima para emitir sinal',
+      detail: 'Valor de 0 a 1. Alto (ex: 0.8) = sinais mais seletivos. Baixo (ex: 0.5) = mais operações, menor precisão.',
+    },
+    {
+      key: 'model',
+      label: 'Modelo LLM',
+      description: 'Modelo de linguagem para análise e decisão',
+      detail: 'Define qual LLM será usado para analisar indicadores e decidir a direção da operação.',
+    },
+    {
+      key: 'candle_settle_delay',
+      label: 'Delay Vela (s)',
+      description: 'Tempo de espera após fechamento da vela',
+      detail: 'Garante que todos os dados da vela estejam disponíveis antes da análise começar.',
+    },
+    {
+      key: 'candles_count',
+      label: 'Qtd. Velas',
+      description: 'Quantidade de velas históricas para análise',
+      detail: 'Mais velas = mais contexto, mas mais tokens usados pelo LLM. Valor típico: 60.',
+    },
   ]
 
   return (
@@ -106,12 +177,15 @@ function BotTab() {
       <div className="bg-lumen-surface border border-lumen-border rounded-lumen p-5 shadow-lumen">
         <h2 className="text-xs tracking-[0.08em] uppercase text-lumen-muted font-medium mb-4">Parâmetros</h2>
         <div className="grid grid-cols-2 gap-4">
-          {fields.map(({ key, label }) => (
+          {fields.map(({ key, label, description, detail }) => (
             <div key={key}>
-              <label className="block text-xs text-lumen-muted mb-1">{label}</label>
+              <div className="flex items-center mb-1">
+                <label className="block text-xs text-lumen-muted">{label}</label>
+                <ParamHelp title={description} description={detail} />
+              </div>
               <input
                 type="text"
-                className="w-full px-3 py-2 text-sm font-mono border border-lumen-border rounded-lumen-sm bg-lumen-bg text-lumen-text focus:outline-none focus:ring-2 focus:ring-lumen-primary-ring focus:border-lumen-primary"
+                className="w-full px-3 py-2 text-sm font-mono border border-lumen-border rounded-lumen-sm bg-lumen-bg text-lumen-text placeholder:text-lumen-faint focus:outline-none focus:ring-2 focus:ring-lumen-primary focus:border-lumen-primary hover:border-lumen-border-strong transition-colors"
                 value={form[key] ?? String(dirty[key] ?? '')}
                 onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
               />
@@ -122,7 +196,7 @@ function BotTab() {
           <button
             onClick={() => updateMut.mutate()}
             disabled={Object.keys(form).length === 0 || updateMut.isPending}
-            className="px-4 py-2 rounded-lumen-sm text-sm font-medium bg-lumen-primary text-white hover:bg-lumen-primary-hover disabled:opacity-50 transition-colors"
+            className="px-4 py-2 rounded-lumen-sm text-sm font-medium bg-lumen-primary text-white hover:bg-lumen-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {updateMut.isPending ? 'Salvando...' : 'Salvar'}
           </button>
