@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import Integer, select, func, and_
+from sqlalchemy import Integer, select, func, and_, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Signal as SignalORM, Candle as CandleORM
@@ -67,6 +67,17 @@ class SignalRepository:
         sig.resolved_at = datetime.now(timezone.utc)
         await self.session.flush()
 
+    async def mark_error(self, signal_id: int) -> None:
+        result = await self.session.execute(
+            select(SignalORM).where(SignalORM.id == signal_id)
+        )
+        sig = result.scalar_one_or_none()
+        if sig is None or sig.status != "pending":
+            return
+        sig.status = "error"
+        sig.resolved_at = datetime.now(timezone.utc)
+        await self.session.flush()
+
     async def mark_aborted(self, signal_id: int) -> None:
         result = await self.session.execute(
             select(SignalORM).where(SignalORM.id == signal_id)
@@ -81,24 +92,24 @@ class SignalRepository:
     # ---------------------------------------------------------------- queries
 
     async def get_pending_alive(self) -> list[SignalORM]:
-        now = datetime.now(timezone.utc)
+        elapsed = cast(func.extract('epoch', func.now() - SignalORM.created_at), Integer)
         result = await self.session.execute(
             select(SignalORM).where(
                 and_(
                     SignalORM.status == "pending",
-                    (now - SignalORM.created_at) < SignalORM.duration,
+                    elapsed < SignalORM.duration,
                 )
             )
         )
         return list(result.scalars().all())
 
     async def get_pending_expired(self) -> list[SignalORM]:
-        now = datetime.now(timezone.utc)
+        elapsed = cast(func.extract('epoch', func.now() - SignalORM.created_at), Integer)
         result = await self.session.execute(
             select(SignalORM).where(
                 and_(
                     SignalORM.status == "pending",
-                    (now - SignalORM.created_at) >= SignalORM.duration,
+                    elapsed >= SignalORM.duration,
                 )
             )
         )
@@ -114,7 +125,7 @@ class SignalRepository:
         query = select(SignalORM).order_by(SignalORM.id.desc()).limit(limit)
         # Normalise sentinel values sent by the LLM tool schema
         if outcome and outcome != "any":
-            query = query.where(SignalORM.outcome == outcome)
+            query = query.where(SignalORM.outcome == outcome.lower())
         if direction and direction != "any":
             query = query.where(SignalORM.direction == direction)
         if recent_days is not None and recent_days > 0:
@@ -230,7 +241,7 @@ def _orm_to_dict(sig: SignalORM) -> dict:
         "status": sig.status,
         "entry_price": sig.entry_price,
         "exit_price": sig.exit_price,
-        "outcome": sig.outcome,
+        "outcome": sig.outcome.upper() if sig.outcome else None,
         "reasoning": sig.reasoning,
         "rsi": sig.rsi,
         "bb_position": sig.bb_position,

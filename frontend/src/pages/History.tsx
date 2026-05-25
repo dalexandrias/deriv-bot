@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { signalsApi } from '@/api/endpoints/signals'
 import { SignalBadge } from '@/components/domain/SignalBadge'
+import { SignalCountdown } from '@/components/domain/SignalCountdown'
 import type { SignalOutcome, SignalDirection, SignalStatus } from '@/api/types'
 
 type OutcomeFilter = 'ALL' | SignalOutcome
@@ -47,9 +48,9 @@ export default function History() {
       <div className="flex flex-wrap gap-4">
         <div className="flex gap-1.5 items-center">
           <span className="text-xs text-lumen-muted mr-1">Status:</span>
-          {(['ALL', 'pending', 'resolved', 'aborted'] as StatusFilter[]).map((s) => (
+          {(['ALL', 'pending', 'resolved', 'aborted', 'error'] as StatusFilter[]).map((s) => (
             <button key={s} onClick={() => setStatusFilter(s)} className={btn(statusFilter === s)}>
-              {s === 'ALL' ? 'Todos' : s === 'pending' ? 'Aguardando' : s === 'resolved' ? 'Resolvido' : 'Abortado'}
+              {s === 'ALL' ? 'Todos' : s === 'pending' ? 'Aguardando' : s === 'resolved' ? 'Resolvido' : s === 'aborted' ? 'Abortado' : 'Erro'}
             </button>
           ))}
         </div>
@@ -85,7 +86,7 @@ export default function History() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-lumen-surface-2 border-b border-lumen-border">
-                {['Hora', 'Ativo', 'TF', 'Sinal', 'Conf.', 'Status', 'Entrada', 'Saída', 'Resultado'].map((h) => (
+                {['Hora', 'Ativo', 'TF', 'Sinal', 'Conf.', 'Status', 'Falta', 'Entrada', 'Saída', 'Resultado'].map((h) => (
                   <th key={h} className="text-left text-[11px] tracking-[0.06em] uppercase text-lumen-muted font-medium px-3 py-3">{h}</th>
                 ))}
               </tr>
@@ -107,13 +108,17 @@ export default function History() {
                       {s.status === 'pending' && (
                         <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-lumen-sm bg-lumen-primary-soft text-lumen-primary">AGUARDANDO</span>
                       )}
-                      {s.status === 'resolved' && !s.outcome && (
+                      {s.status === 'resolved' && (
                         <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-lumen-sm bg-lumen-surface-2 text-lumen-muted">RESOLVIDO</span>
                       )}
                       {s.status === 'aborted' && (
                         <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-lumen-sm bg-lumen-surface-2 text-lumen-muted">ABORTADO</span>
                       )}
+                      {s.status === 'error' && (
+                        <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-lumen-sm bg-lumen-down-soft text-lumen-down">ERRO</span>
+                      )}
                     </td>
+                    <td className="px-3 py-2.5"><SignalCountdown signal={s} /></td>
                     <td className="px-3 py-2.5 font-mono tabular-nums text-lumen-body">{s.entry_price ?? '—'}</td>
                     <td className="px-3 py-2.5 font-mono tabular-nums text-lumen-body">{s.exit_price ?? '—'}</td>
                     <td className="px-3 py-2.5">

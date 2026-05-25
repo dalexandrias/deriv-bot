@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { signalsApi } from '@/api/endpoints/signals'
 import { useEventsStore } from '@/store/events'
 import { SignalBadge } from '@/components/domain/SignalBadge'
+import { SignalCountdown } from '@/components/domain/SignalCountdown'
 import type { Signal } from '@/api/types'
 
 export default function Signals() {
@@ -37,7 +38,7 @@ export default function Signals() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-lumen-surface-2 border-b border-lumen-border">
-                {['Hora', 'Ativo', 'TF', 'Sinal', 'Confiança', 'RSI', 'ADX', 'Score'].map((h) => (
+                {['Hora', 'Ativo', 'TF', 'Sinal', 'Confiança', 'Falta', 'RSI', 'ADX', 'Score'].map((h) => (
                   <th key={h} className="text-left text-[11px] tracking-[0.06em] uppercase text-lumen-muted font-medium px-4 py-3">{h}</th>
                 ))}
               </tr>
@@ -54,6 +55,7 @@ export default function Signals() {
                     <SignalBadge direction={s.direction} />
                   </td>
                   <td className="px-4 py-3 font-mono tabular-nums">{s.confidence.toFixed(2)}</td>
+                  <td className="px-4 py-3"><SignalCountdown signal={s} /></td>
                   <td className="px-4 py-3 font-mono tabular-nums text-lumen-body">{s.rsi?.toFixed(1) ?? '—'}</td>
                   <td className="px-4 py-3 font-mono tabular-nums text-lumen-body">{s.adx?.toFixed(1) ?? '—'}</td>
                   <td className="px-4 py-3 font-mono tabular-nums text-lumen-body">{s.confluence_score?.toFixed(2) ?? '—'}</td>

@@ -62,9 +62,9 @@ export function useSSE() {
               const d = event.data as any
               s.upsertSignal(d)
               const lvl = d.outcome === 'WIN' ? 'info' : 'warning'
-              const entryStr = d.quote_entry != null ? Number(d.quote_entry).toFixed(2) : '?'
-              const exitStr = d.quote_exit != null ? Number(d.quote_exit).toFixed(2) : '?'
-              s.addLog({ message: `RESULT #${d.id} ${(d.outcome ?? '?').toUpperCase()} entrada=${entryStr} saída=${exitStr}`, level: lvl })
+              const entryStr = d.entry_price != null ? Number(d.entry_price).toFixed(2) : '?'
+              const exitStr = d.exit_price != null ? Number(d.exit_price).toFixed(2) : '?'
+              s.addLog({ message: `RESULT #${d.id} ${(d.outcome ?? '?')} entrada=${entryStr} saída=${exitStr}`, level: lvl })
               qc.invalidateQueries({ queryKey: ['signals'] })
               qc.invalidateQueries({ queryKey: ['signals', 'stats'] })
               break

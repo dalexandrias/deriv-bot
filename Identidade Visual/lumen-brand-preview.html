@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumen — Brand Kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --primary:#3B5BDB; --primary-hover:#324CC4; --primary-soft:#EEF2FF; --primary-ring:#C7D2FE;
+    --bg:#F8FAFC; --surface:#FFFFFF; --surface-2:#F1F5F9; --border:#E2E8F0; --border-strong:#CBD5E1;
+    --text:#0F172A; --body:#334155; --muted:#64748B; --faint:#94A3B8;
+    --up:#16A34A; --up-soft:#DCFCE7; --down:#DC2626; --down-soft:#FEE2E2;
+    --paused:#D97706;
+    --font-display:'Inter',sans-serif; --font-body:'Inter',sans-serif; --font-mono:'JetBrains Mono',monospace;
+    --shadow:0 1px 3px rgba(15,23,42,.06),0 1px 2px rgba(15,23,42,.04);
+    --shadow-lg:0 10px 30px rgba(15,23,42,.08);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:var(--font-body);background:var(--bg);color:var(--body);padding:48px;line-height:1.5}
+  .wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;box-shadow:var(--shadow)}
+  h1{font-family:var(--font-display);font-weight:600;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:20px}
+
+  /* header / logo */
+  .hero{display:flex;align-items:center;gap:16px}
+  .mark{width:56px;height:56px;flex:none}
+  .logo-text{font-family:var(--font-display);font-weight:600;font-size:34px;letter-spacing:-.02em;color:var(--text)}
+  .tagline{color:var(--muted);font-size:15px;margin-top:4px}
+
+  /* swatches */
+  .row{display:flex;flex-wrap:wrap;gap:14px}
+  .sw{flex:none;width:128px}
+  .chip{height:64px;border-radius:10px;border:1px solid var(--border);margin-bottom:8px}
+  .sw .name{font-size:13px;font-weight:500;color:var(--text)}
+  .sw .hex{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+
+  /* type */
+  .type-display{font-family:var(--font-display);font-weight:600;font-size:30px;color:var(--text);letter-spacing:-.02em}
+  .type-body{font-size:16px;color:var(--body);max-width:560px;margin-top:6px}
+  .type-mono{font-family:var(--font-mono);font-size:20px;color:var(--text);margin-top:14px;font-variant-numeric:tabular-nums}
+  .type-label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-top:18px}
+
+  /* mock dashboard */
+  .dash{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+  .metric{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .metric .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .metric .val{font-family:var(--font-mono);font-size:24px;font-weight:600;color:var(--text);margin-top:6px;font-variant-numeric:tabular-nums}
+  .metric .delta{font-family:var(--font-mono);font-size:13px;margin-top:2px}
+  .up{color:var(--up)} .down{color:var(--down)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:10px 12px;background:var(--surface-2);border-bottom:1px solid var(--border)}
+  td{padding:11px 12px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--body)}
+  .badge{display:inline-block;font-family:var(--font-body);font-size:12px;font-weight:600;padding:2px 10px;border-radius:6px}
+  .badge.buy{background:var(--up-soft);color:var(--up)}
+  .badge.sell{background:var(--down-soft);color:var(--down)}
+  .btns{display:flex;gap:12px;align-items:center;margin-top:8px}
+  .btn{font-family:var(--font-body);font-weight:500;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+  .btn-primary{background:var(--primary);color:#fff}
+  .btn-ghost{background:var(--surface);color:var(--body);border-color:var(--border-strong)}
+  .status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--body)}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .dot.live{background:var(--up);box-shadow:0 0 0 3px var(--up-soft)}
+  .dot.paused{background:var(--paused)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="hero">
+      <svg class="mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="24" cy="24" r="14" stroke="#3B5BDB" stroke-width="3"/>
+        <circle cx="24" cy="24" r="4.5" fill="#3B5BDB"/>
+        <rect x="23" y="2" width="2" height="6" rx="1" fill="#3B5BDB"/>
+        <rect x="23" y="40" width="2" height="6" rx="1" fill="#3B5BDB"/>
+        <rect x="40" y="23" width="6" height="2" rx="1" fill="#3B5BDB"/>
+        <rect x="2" y="23" width="6" height="2" rx="1" fill="#3B5BDB"/>
+      </svg>
+      <div>
+        <div class="logo-text">Lumen</div>
+        <div class="tagline">Leia o mercado com clareza.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h1>Paleta</h1>
+    <div class="row" style="margin-bottom:22px">
+      <div class="sw"><div class="chip" style="background:#3B5BDB"></div><div class="name">Primary</div><div class="hex">#3B5BDB</div></div>
+      <div class="sw"><div class="chip" style="background:#EEF2FF"></div><div class="name">Primary soft</div><div class="hex">#EEF2FF</div></div>
+      <div class="sw"><div class="chip" style="background:#0F172A"></div><div class="name">Text</div><div class="hex">#0F172A</div></div>
+      <div class="sw"><div class="chip" style="background:#64748B"></div><div class="name">Muted</div><div class="hex">#64748B</div></div>
+      <div class="sw"><div class="chip" style="background:#F8FAFC"></div><div class="name">Background</div><div class="hex">#F8FAFC</div></div>
+      <div class="sw"><div class="chip" style="background:#E2E8F0"></div><div class="name">Border</div><div class="hex">#E2E8F0</div></div>
+    </div>
+    <div class="row">
+      <div class="sw"><div class="chip" style="background:#16A34A"></div><div class="name">Up / Buy</div><div class="hex">#16A34A</div></div>
+      <div class="sw"><div class="chip" style="background:#DC2626"></div><div class="name">Down / Sell</div><div class="hex">#DC2626</div></div>
+      <div class="sw"><div class="chip" style="background:#D97706"></div><div class="name">Paused</div><div class="hex">#D97706</div></div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-top:18px">Verde e vermelho são <strong>reservados para dados</strong> — sinais, velas e variações. A marca é neutra (índigo).</p>
+  </div>
+
+  <div class="card">
+    <h1>Tipografia</h1>
+    <div class="type-display">Lumen — leitura nítida do mercado</div>
+    <div class="type-body">Inter para o corpo e interface: legível, neutra, sem personalidade demais para não competir com os dados. Sohne (com Inter como fallback) nos títulos.</div>
+    <div class="type-label">Dados em mono · JetBrains Mono · tabular</div>
+    <div class="type-mono">1.08423 &nbsp; +0.42% &nbsp; 23:14:07 &nbsp; R$ 1.250,00</div>
+  </div>
+
+  <div class="card">
+    <h1>Aplicação</h1>
+    <div class="dash">
+      <div class="metric"><div class="lbl">Win rate</div><div class="val">64.2%</div><div class="delta up">▲ 3.1% hoje</div></div>
+      <div class="metric"><div class="lbl">Sinais hoje</div><div class="val">28</div><div class="delta" style="color:var(--muted)">12 compra · 16 venda</div></div>
+      <div class="metric"><div class="lbl">P/L</div><div class="val">+R$ 412</div><div class="delta down">▼ 1.2% vs ontem</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Hora</th><th>Ativo</th><th>Sinal</th><th>Preço</th><th>Conf.</th></tr></thead>
+      <tbody>
+        <tr><td>23:14:07</td><td>R_100</td><td><span class="badge buy">COMPRA</span></td><td>1.08423</td><td>0.82</td></tr>
+        <tr><td>23:11:52</td><td>R_50</td><td><span class="badge sell">VENDA</span></td><td>248.17</td><td>0.76</td></tr>
+        <tr><td>23:09:33</td><td>R_100</td><td><span class="badge sell">VENDA</span></td><td>1.08901</td><td>0.69</td></tr>
+      </tbody>
+    </table>
+    <div class="btns" style="margin-top:20px">
+      <button class="btn btn-primary">Iniciar bot</button>
+      <button class="btn btn-ghost">Configurar</button>
+      <span class="status" style="margin-left:8px"><span class="dot live"></span> Reader rodando</span>
+      <span class="status"><span class="dot paused"></span> Analyzer pausado</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
