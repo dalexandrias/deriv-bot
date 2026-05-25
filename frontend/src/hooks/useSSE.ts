@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEventsStore } from '@/store/events'
 import type { SSEEvent } from '@/api/types'
 
-const SSE_URL = '/api/v1/events/stream'
+const SSE_URL = `${import.meta.env.VITE_API_URL ?? ''}/api/v1/events/stream`
 const MAX_RETRY_MS = 30_000
 const BASE_RETRY_MS = 1_000
 

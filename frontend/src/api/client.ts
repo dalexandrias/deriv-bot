@@ -1,4 +1,4 @@
-const BASE = '/api/v1'
+const BASE = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`
 
 interface ApiResponse<T> { data: T | null; error: string | null }
 
