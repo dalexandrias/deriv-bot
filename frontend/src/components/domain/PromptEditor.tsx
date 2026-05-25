@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import MDEditor from '@uiw/react-md-editor'
 import '@uiw/react-md-editor/markdown-editor.css'
@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { promptApi } from '@/api/endpoints/prompt'
-import type { PromptHistoryItem } from '@/api/types'
+import type { PromptHistoryItem, PromptVersion } from '@/api/types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -20,12 +20,13 @@ export function PromptEditor() {
   const { data: activePrompt } = useQuery({
     queryKey: ['prompt', 'active'],
     queryFn: () => promptApi.getActive(),
-    onSuccess: (data) => {
-      if (content === null) {
-        setContent(data?.content || '')
-      }
-    },
   })
+
+  useEffect(() => {
+    if (content === null && activePrompt?.content) {
+      setContent(activePrompt.content)
+    }
+  }, [activePrompt?.content, content])
 
   const { data: history = [] } = useQuery({
     queryKey: ['prompt', 'history'],
@@ -39,9 +40,9 @@ export function PromptEditor() {
     enabled: !!selectedHistoryId,
   })
 
-  const updateMutation = useMutation({
+  const updateMutation = useMutation<PromptVersion>({
     mutationFn: () => promptApi.update({ content: content || '', note }),
-    onSuccess: (newPrompt) => {
+    onSuccess: (newPrompt: PromptVersion) => {
       queryClient.invalidateQueries({ queryKey: ['prompt'] })
       toast.success('Prompt atualizado com sucesso')
       setContent(newPrompt.content)
@@ -50,7 +51,7 @@ export function PromptEditor() {
     onError: () => toast.error('Erro ao atualizar prompt'),
   })
 
-  const restoreMutation = useMutation({
+  const restoreMutation = useMutation<PromptVersion, Error, number>({
     mutationFn: (versionId: number) => promptApi.restore(versionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prompt'] })
@@ -80,7 +81,7 @@ export function PromptEditor() {
         <div className="col-span-2 space-y-4">
           <div className="space-y-2">
             <h2 className="text-lg font-semibold text-lumen-text">Editor de Prompt</h2>
-            {activePrompt && (
+            {activePrompt?.content && (
               <p className="text-sm text-lumen-muted">
                 Atualizado em {format(new Date(activePrompt.created_at), 'PPP HH:mm', { locale: ptBR })}
                 {activePrompt.note && ` • ${activePrompt.note}`}
