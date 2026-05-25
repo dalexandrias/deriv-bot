@@ -125,6 +125,43 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "emit_signal",
+            "description": (
+                "Emite a decisão final da análise. Chame esta tool EXATAMENTE UMA VEZ por ciclo, "
+                "ao final de sua análise. Use AGUARDE quando: regime indefinido + janela ruim SEM confluência, "
+                "OU conflito forte M5×M15 sem confirmação adicional. Caso contrário, sempre escolha COMPRA ou VENDA "
+                "com confiança ajustada à força da confluência."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "direction": {
+                        "type": "string",
+                        "enum": ["COMPRA", "VENDA", "AGUARDE"],
+                        "description": "Direção do sinal: COMPRA, VENDA ou AGUARDE.",
+                    },
+                    "confidence": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "Nível de confiança 0-100. Use 0 para AGUARDE.",
+                    },
+                    "entry_time": {
+                        "type": "string",
+                        "description": "Horário do próximo candle M5 a operar, formato HH:MM. Obrigatório para COMPRA/VENDA, opcional para AGUARDE.",
+                    },
+                    "rationale": {
+                        "type": "string",
+                        "description": "Justificativa curta (1-2 frases) para a decisão.",
+                    },
+                },
+                "required": ["direction", "confidence"],
+            },
+        },
+    },
 ]
 
 
@@ -136,6 +173,7 @@ class ToolDispatcher:
         self.symbol = symbol
         self.decision_timeframe = decision_timeframe
         self.context_timeframe = context_timeframe
+        self.emitted_signal: dict | None = None
 
     async def dispatch(self, name: str, args: dict) -> dict:
         if name == "query_signal_history":
@@ -144,6 +182,8 @@ class ToolDispatcher:
             return await self._get_candles_range(**args)
         if name == "calc_indicator":
             return await self._calc_indicator(**args)
+        if name == "emit_signal":
+            return await self._emit_signal(**args)
         return {"error": f"Tool desconhecida: {name}"}
 
     async def _query_signal_history(
@@ -262,3 +302,25 @@ class ToolDispatcher:
 
         except Exception as e:
             return {"error": str(e)}
+
+    async def _emit_signal(
+        self,
+        direction: str,
+        confidence: int,
+        entry_time: str | None = None,
+        rationale: str = "",
+    ) -> dict:
+        direction_map = {"COMPRA": "CALL", "VENDA": "PUT", "AGUARDE": "WAIT"}
+        mapped_direction = direction_map.get(direction.upper())
+        if not mapped_direction:
+            return {"error": f"Direção inválida: {direction}. Use COMPRA, VENDA ou AGUARDE."}
+        if not 0 <= confidence <= 100:
+            return {"error": f"Confiança deve estar entre 0 e 100, recebido: {confidence}"}
+        self.emitted_signal = {
+            "direction": mapped_direction,
+            "confidence": confidence / 100.0,
+            "entry_time": entry_time or "",
+            "rationale": rationale,
+            "raw": "tool",
+        }
+        return {"ok": True, "received": self.emitted_signal}

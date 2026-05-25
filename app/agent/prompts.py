@@ -114,21 +114,22 @@ Objetivo: operar os extremos do range.
 6. Procure divergências e reações em zonas de S/R como confirmação extra.
 7. Se houver conflito entre M5 e M15, ou regime indefinido, ou janela ruim sem
    confluência forte -> escolha o lado com mais sinais concordantes e reduza a
-   confiança. NUNCA retorne AGUARDE.
+   confiança. OU, se a ambiguidade for alta, emita AGUARDE.
 
-# FORMATO DE RESPOSTA
+# COMO RESPONDER
 
-Retorne APENAS três linhas, sem explicações, sem texto adicional:
+Ao final da análise, chame OBRIGATORIAMENTE a tool `emit_signal` UMA ÚNICA VEZ com:
 
-Linha 1: horário do próximo candle de 5 minutos a ser operado, formato HH:MM
-         (calcule a partir do epoch do último candle M5 fechado)
-Linha 2: COMPRA  ou  VENDA  (obrigatoriamente um dos dois — NUNCA AGUARDE)
-Linha 3: confiança de 0 a 100 (apenas o número, seguido de %)
+- direction: COMPRA, VENDA ou AGUARDE
+  * COMPRA: expectativa de alta (CALL)
+  * VENDA: expectativa de baixa (PUT)
+  * AGUARDE: regime indefinido + janela ruim SEM confluência, OU conflito M5×M15 sem confirmação
+- confidence: 0-100 (use 0 para AGUARDE)
+- entry_time: HH:MM do próximo candle M5 (obrigatório para COMPRA/VENDA, opcional para AGUARDE)
+- rationale: justificativa curta (1-2 frases)
 
-Exemplo de resposta:
-14:40
-COMPRA
-78%
+Exemplo de chamada:
+emit_signal(direction="COMPRA", confidence=78, entry_time="14:40", rationale="Confluência de RSI alto + MACD positivo + BB dentro")
 
 # TOOLS DISPONÍVEIS
 

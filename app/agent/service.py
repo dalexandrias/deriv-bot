@@ -198,7 +198,10 @@ class AgentService:
 
                     signal_id = None
                     signal_status = ""
-                    if confidence >= min_confidence and direction != "NONE":
+                    if direction == "WAIT":
+                        signal_status = "AGUARDE (LLM)"
+                        publish(EventType.STATUS, {"status": "idle", "detail": "LLM solicitou aguardar próximo ciclo"})
+                    elif confidence >= min_confidence and direction != "NONE":
                         signal_data = SignalCreate(
                             symbol=symbol, timeframe=decision_tf,
                             direction=direction, confidence=confidence,
@@ -358,30 +361,52 @@ class AgentService:
                         args = {}
                     result = await dispatcher.dispatch(tool_name, args)
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result, ensure_ascii=False)})
+                    if tool_name == "emit_signal" and dispatcher.emitted_signal:
+                        return dispatcher.emitted_signal
                 if turn == MAX_TOOL_TURNS:
-                    payload2 = {"model": config["model"], "messages": messages}
-                    r2 = await http.post(OPENROUTER_URL, headers=headers, json=payload2, timeout=60.0)
-                    r2.raise_for_status()
-                    content = (r2.json()["choices"][0]["message"].get("content") or "").strip()
+                    payload2 = {"model": config["model"], "messages": messages, "tool_choice": {"type": "function", "function": {"name": "emit_signal"}}}
+                    try:
+                        r2 = await http.post(OPENROUTER_URL, headers=headers, json=payload2, timeout=60.0)
+                        r2.raise_for_status()
+                        choice2 = r2.json()["choices"][0]
+                        message2 = choice2["message"]
+                        tool_calls2 = message2.get("tool_calls") or []
+                        if tool_calls2:
+                            tc = tool_calls2[0]
+                            try:
+                                args = json.loads(tc["function"].get("arguments", "{}"))
+                            except json.JSONDecodeError:
+                                args = {}
+                            result = await dispatcher.dispatch(tc["function"]["name"], args)
+                            if dispatcher.emitted_signal:
+                                return dispatcher.emitted_signal
+                    except Exception:
+                        pass
+                    content = (message2.get("content") or "").strip() if 'message2' in locals() else ""
         return self._parse_response(content, market_data.get("pre_analysis"))
 
     @staticmethod
     def _parse_response(content: str, pre_analysis: dict | None = None) -> dict:
         try:
             lines = [line.strip() for line in content.strip().splitlines() if line.strip()]
-            if len(lines) < 3:
-                raise ValueError(f"Expected 3 lines, got {len(lines)}")
-            direction_raw = lines[-2].upper()
-            confidence_line = lines[-1]
-            direction_map = {"COMPRA": "CALL", "VENDA": "PUT"}
+            if len(lines) < 2:
+                raise ValueError(f"Expected at least 2 lines, got {len(lines)}")
+            direction_raw = lines[-1].upper() if len(lines) == 2 else lines[-2].upper()
+            direction_map = {"COMPRA": "CALL", "VENDA": "PUT", "AGUARDE": "WAIT"}
             direction = direction_map.get(direction_raw)
-            if direction is None:
+            confidence = 0.0
+            if direction in ("CALL", "PUT") and len(lines) >= 3:
+                try:
+                    confidence_line = lines[-1]
+                    confidence_pct = int(confidence_line.replace("%", ""))
+                    confidence = confidence_pct / 100.0
+                except (ValueError, IndexError):
+                    confidence = 0.0
+            elif direction is None:
                 fallback = "CALL"
                 if pre_analysis and pre_analysis.get("suggested_direction") in ("CALL", "PUT"):
                     fallback = pre_analysis["suggested_direction"]
                 direction = fallback
-            confidence_pct = int(confidence_line.replace("%", ""))
-            confidence = confidence_pct / 100.0
             return {"confidence": confidence, "direction": direction, "raw_response": content}
         except (ValueError, IndexError):
             fallback = "CALL"
