@@ -2,7 +2,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.main import _app_state
 from app.db.models import PromptVersion
 from app.prompts.repository import get_active, list_recent, save_new, restore
 
@@ -17,6 +16,7 @@ class PromptUpdateRequest(BaseModel):
 @router.get("")
 async def get_prompt():
     """Get the currently active prompt version."""
+    from app.main import _app_state
     prompt = await get_active(_app_state.db_session)
     if not prompt:
         return {"data": None, "error": "No active prompt found"}
@@ -35,6 +35,7 @@ async def get_prompt():
 @router.get("/history")
 async def get_prompt_history():
     """Get the 10 most recent prompt versions (without content)."""
+    from app.main import _app_state
     prompts = await list_recent(_app_state.db_session, limit=10)
     return {
         "data": [
@@ -53,6 +54,7 @@ async def get_prompt_history():
 @router.get("/history/{version_id}")
 async def get_prompt_history_item(version_id: int):
     """Get a specific prompt version with full content."""
+    from app.main import _app_state
     stmt = select(PromptVersion).where(PromptVersion.id == version_id)
     result = await _app_state.db_session.execute(stmt)
     prompt = result.scalar_one_or_none()
@@ -75,6 +77,7 @@ async def get_prompt_history_item(version_id: int):
 @router.put("")
 async def update_prompt(body: PromptUpdateRequest):
     """Save a new prompt version and set it as active."""
+    from app.main import _app_state
     prompt = await save_new(_app_state.db_session, body.content, body.note)
     return {
         "data": {
@@ -91,6 +94,7 @@ async def update_prompt(body: PromptUpdateRequest):
 @router.post("/restore/{version_id}")
 async def restore_prompt(version_id: int):
     """Restore an older prompt version (creates new active version from it)."""
+    from app.main import _app_state
     prompt = await restore(_app_state.db_session, version_id)
 
     if not prompt:
