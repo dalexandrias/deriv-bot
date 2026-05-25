@@ -11,7 +11,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 export function PromptEditor() {
-  const [content, setContent] = useState('')
+  const [content, setContent] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null)
   const [showHistoryDetail, setShowHistoryDetail] = useState(false)
@@ -20,6 +20,11 @@ export function PromptEditor() {
   const { data: activePrompt } = useQuery({
     queryKey: ['prompt', 'active'],
     queryFn: () => promptApi.getActive(),
+    onSuccess: (data) => {
+      if (content === null) {
+        setContent(data?.content || '')
+      }
+    },
   })
 
   const { data: history = [] } = useQuery({
@@ -35,11 +40,11 @@ export function PromptEditor() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: () => promptApi.update({ content, note }),
-    onSuccess: () => {
+    mutationFn: () => promptApi.update({ content: content || '', note }),
+    onSuccess: (newPrompt) => {
       queryClient.invalidateQueries({ queryKey: ['prompt'] })
       toast.success('Prompt atualizado com sucesso')
-      setContent(activePrompt?.content || '')
+      setContent(newPrompt.content)
       setNote('')
     },
     onError: () => toast.error('Erro ao atualizar prompt'),
@@ -56,7 +61,8 @@ export function PromptEditor() {
     onError: () => toast.error('Erro ao restaurar prompt'),
   })
 
-  const hasChanges = activePrompt && content !== activePrompt.content
+  const currentContent = content !== null ? content : activePrompt?.content || ''
+  const hasChanges = content !== null && content !== activePrompt?.content
 
   const handleReset = () => {
     setContent(activePrompt?.content || '')
@@ -67,8 +73,6 @@ export function PromptEditor() {
     setSelectedHistoryId(historyItem.id)
     setShowHistoryDetail(true)
   }
-
-  const currentContent = content || activePrompt?.content || ''
 
   return (
     <div className="space-y-6">
