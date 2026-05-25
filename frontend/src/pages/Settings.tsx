@@ -8,6 +8,7 @@ import { indicatorsApi } from '@/api/endpoints/indicators'
 import { collectorApi } from '@/api/endpoints/collector'
 import { toast } from 'sonner'
 import type { IndicatorConfig } from '@/api/types'
+import { PromptEditor } from '@/components/domain/PromptEditor'
 
 // ─── Parameter Help Component ─────────────────────────────────────────────────
 
@@ -530,6 +531,7 @@ export default function Settings() {
             { value: 'bot', label: 'Bot' },
             { value: 'indicators', label: 'Indicadores' },
             { value: 'collector', label: 'Collector' },
+            { value: 'prompt', label: 'Prompt' },
           ].map(({ value, label }) => (
             <Tabs.Trigger
               key={value}
@@ -548,6 +550,9 @@ export default function Settings() {
         </Tabs.Content>
         <Tabs.Content value="collector">
           <CollectorTab />
+        </Tabs.Content>
+        <Tabs.Content value="prompt">
+          <PromptEditor />
         </Tabs.Content>
       </Tabs.Root>
     </div>

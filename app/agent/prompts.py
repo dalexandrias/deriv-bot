@@ -142,7 +142,17 @@ um padrão com o histórico. Não é obrigatório usá-las em todo ciclo.
 """
 
 
-def build_system_prompt(config: dict) -> str:
+async def build_system_prompt(config: dict, session=None) -> str:
+    """Build system prompt from database if available, else fallback to hardcoded template."""
+    if session is not None:
+        try:
+            from app.prompts.repository import get_active
+            active = await get_active(session)
+            if active:
+                return active.content
+        except Exception as e:
+            from loguru import logger
+            logger.warning(f"Failed to fetch active prompt from DB: {e}")
     return SYSTEM_PROMPT_TEMPLATE
 
 

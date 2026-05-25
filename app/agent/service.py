@@ -41,10 +41,15 @@ class AgentService:
         self._last_cycle: datetime | None = None
         self._start_time: datetime | None = None
         self._cycle_count: int = 0
+        self._active_verifiers: dict[int, asyncio.Task] = {}
 
     async def start(self) -> None:
         self._running = True
         self._start_time = datetime.now(timezone.utc)
+        async with self.session_factory() as session:
+            repo = SignalRepository(session)
+            config = await self._load_config(repo)
+            await self._recover_pending_signals(repo, session, config)
         self._task = asyncio.create_task(self._loop())
         logger.info("Agent iniciado")
 
@@ -87,6 +92,30 @@ class AgentService:
         result = await repo.session.execute(stmt)
         return result.scalars().all()
 
+    async def _recover_pending_signals(self, repo: SignalRepository, session, config: dict) -> None:
+        from app.signals.verifier import resolve
+
+        expired = await repo.get_pending_expired()
+        for sig in expired:
+            await repo.mark_error(sig.id)
+            publish(EventType.SIGNAL_RESOLVED, {"id": sig.id, "status": "error"})
+            logger.warning(f"Sinal #{sig.id} expirado sem resolução → marcado como erro")
+        if expired:
+            await session.commit()
+
+        alive = await repo.get_pending_alive()
+        settle_delay = int(config.get("candle_settle_delay", 2))
+        for sig in alive:
+            if sig.id not in self._active_verifiers:
+                task = asyncio.create_task(resolve(
+                    self.client, self.session_factory, sig.id, sig.direction,
+                    sig.symbol, sig.timeframe, sig.entry_candle_time,
+                    settle_delay=settle_delay,
+                ))
+                self._active_verifiers[sig.id] = task
+                task.add_done_callback(lambda _, sid=sig.id: self._active_verifiers.pop(sid, None))
+                logger.info(f"Sinal #{sig.id} recuperado → verifier re-iniciado")
+
     async def _loop(self) -> None:
         while self._running:
             try:
@@ -103,6 +132,8 @@ class AgentService:
                     decision_tf = config.get("decision_timeframe", "5m")
                     context_tf = config.get("context_timeframe", "15m")
                     min_confidence = float(config.get("min_confidence", 0.50))
+
+                    await self._recover_pending_signals(repo, session, config)
 
                     logger.info(
                         f"┌─ CICLO #{cycle_id:04d} ─────────────────────────────────────────"
@@ -156,7 +187,7 @@ class AgentService:
                     await repo.upsert_candles(market_data["m5_candles"], symbol, decision_tf)
                     await repo.upsert_candles(market_data["m15_candles"], symbol, context_tf)
 
-                    result = await self._run_agent(config, market_data, repo)
+                    result = await self._run_agent(config, market_data, repo, session)
                     confidence = result["confidence"]
                     direction = result["direction"]
 
@@ -197,14 +228,19 @@ class AgentService:
                             "id": signal_id, "direction": direction,
                             "confidence": confidence, "symbol": symbol,
                             "entry_candle_time": market_data.get("next_entry_time"),
+                            "duration": int(config.get("duration", 300)),
                         })
                         from app.signals.verifier import resolve
-                        asyncio.create_task(resolve(
+                        _v_task = asyncio.create_task(resolve(
                             self.client, self.session_factory, signal_id, direction,
                             symbol, decision_tf,
                             market_data.get("next_entry_time"),
                             settle_delay=int(config.get("candle_settle_delay", 2)),
                         ))
+                        self._active_verifiers[signal_id] = _v_task
+                        _v_task.add_done_callback(
+                            lambda _, sid=signal_id: self._active_verifiers.pop(sid, None)
+                        )
                     else:
                         signal_status = f"NÃO EMITIDO (conf={confidence:.0%} < mín={min_confidence:.0%})"
                         publish(EventType.STATUS, {"status": "idle", "detail": f"Confiança insuficiente: {confidence:.0%}"})
@@ -278,10 +314,10 @@ class AgentService:
             "next_entry_time": next_entry_dt.isoformat(),
         }
 
-    async def _run_agent(self, config: dict, market_data: dict, repo: SignalRepository) -> dict:
+    async def _run_agent(self, config: dict, market_data: dict, repo: SignalRepository, session=None) -> dict:
         decision_tf = config.get("decision_timeframe", "5m")
         context_tf = config.get("context_timeframe", "15m")
-        system_prompt = build_system_prompt(config)
+        system_prompt = await build_system_prompt(config, session)
         user_msg = build_user_context(config, market_data["m5_indicators"],
             market_data["m15_indicators"], market_data["pre_analysis"],
             market_data.get("last_candle_time", ""), market_data.get("next_entry_time", ""))

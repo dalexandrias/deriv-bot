@@ -1,6 +1,6 @@
 export type SignalDirection = 'CALL' | 'PUT'
 export type SignalOutcome = 'WIN' | 'LOSS'
-export type SignalStatus = 'pending' | 'resolved' | 'aborted'
+export type SignalStatus = 'pending' | 'resolved' | 'aborted' | 'error'
 
 export interface Signal {
   id: number
@@ -79,6 +79,21 @@ export interface Candle {
 export interface HealthStatus {
   db: 'ok' | 'error'
   deriv_ws: 'ok' | 'disconnected'
+}
+
+export interface PromptVersion {
+  id: number
+  content: string
+  note: string | null
+  created_at: string
+  is_active: boolean
+}
+
+export interface PromptHistoryItem {
+  id: number
+  note: string | null
+  created_at: string
+  is_active: boolean
 }
 
 // SSE event types
