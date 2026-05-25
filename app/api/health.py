@@ -10,8 +10,9 @@ async def health_check():
     db_ok = False
     deriv_ok = False
     try:
-        if _app_state.db_session:
-            await _app_state.db_session.execute(text("SELECT 1"))
+        if _app_state.session_factory:
+            async with _app_state.session_factory() as session:
+                await session.execute(text("SELECT 1"))
             db_ok = True
     except Exception:
         pass

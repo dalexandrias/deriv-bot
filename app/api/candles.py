@@ -10,8 +10,10 @@ async def list_candles(
     limit: int = Query(default=100, le=500),
 ):
     from app.main import _app_state
-
-    candles = await _app_state.repo.get_candles_range(symbol, timeframe, count=limit)
+    from app.signals.repository import SignalRepository
+    async with _app_state.session_factory() as session:
+        repo = SignalRepository(session)
+        candles = await repo.get_candles_range(symbol, timeframe, count=limit)
     candles_with_meta = [
         {**c, "symbol": symbol, "timeframe": timeframe}
         for c in candles
@@ -24,9 +26,10 @@ async def list_symbols():
     from app.db.models import Candle
     from sqlalchemy import select, distinct
     from app.main import _app_state
-
-    result = await _app_state.db_session.execute(
-        select(distinct(Candle.symbol)).order_by(Candle.symbol)
-    )
-    symbols = [row[0] for row in result.all()]
+    from app.signals.repository import SignalRepository
+    async with _app_state.session_factory() as session:
+        result = await session.execute(
+            select(distinct(Candle.symbol)).order_by(Candle.symbol)
+        )
+        symbols = [row[0] for row in result.all()]
     return {"data": symbols, "error": None}

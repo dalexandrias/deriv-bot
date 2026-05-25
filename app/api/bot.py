@@ -1,5 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_session
+from app.db.models import BotConfig
 
 router = APIRouter(prefix="/bot", tags=["bot"])
 
@@ -31,27 +35,20 @@ async def bot_status():
 
 
 @router.get("/config")
-async def get_bot_config():
-    from app.db.models import BotConfig
-    from app.main import _app_state
-    stmt = select(BotConfig)
-    result = await _app_state.db_session.execute(stmt)
+async def get_bot_config(session: AsyncSession = Depends(get_session)):
+    result = await session.execute(select(BotConfig))
     configs = {c.key: c.value for c in result.scalars().all()}
     return {"data": configs, "error": None}
 
 
 @router.patch("/config")
-async def update_bot_config(body: dict):
-    from app.db.models import BotConfig
-    from sqlalchemy import select
-    from app.main import _app_state
+async def update_bot_config(body: dict, session: AsyncSession = Depends(get_session)):
     for key, value in body.items():
-        stmt = select(BotConfig).where(BotConfig.key == key)
-        result = await _app_state.db_session.execute(stmt)
+        result = await session.execute(select(BotConfig).where(BotConfig.key == key))
         cfg = result.scalar_one_or_none()
         if cfg:
             cfg.value = value
         else:
-            _app_state.db_session.add(BotConfig(key=key, value=value))
-    await _app_state.db_session.commit()
+            session.add(BotConfig(key=key, value=value))
+    await session.commit()
     return {"data": {"updated": list(body.keys())}, "error": None}
