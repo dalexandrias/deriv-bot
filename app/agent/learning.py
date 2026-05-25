@@ -1,97 +1,99 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.signals.repository import SignalRepository
+from app.agent import memory_repository as mem
 from loguru import logger
 
 
-def build_context_block(repo: SignalRepository, config: dict) -> str:
-    """
-    Build a learning context block from resolved signals.
-    Injects recent signals + pattern statistics into the LLM prompt.
-    Returns empty string if no learning history available.
-    """
+async def build_context_block(
+    session: AsyncSession, repo: SignalRepository, config: dict
+) -> str:
     try:
-        # Parse learning_history_size with safe conversion
-        try:
-            n = int(config.get("learning_history_size", 20))
-        except (ValueError, TypeError):
-            logger.warning(f"Invalid learning_history_size config, using default 20")
-            n = 20
+        parts = []
 
-        # Ensure n is positive
-        if n <= 0:
-            n = 20
-
-        recent = repo.get_resolved(limit=n)
-
-        if not recent:
-            return ""  # No learning history yet
-
-        lines = ["## Histórico recente de sinais (últimos resolvidos)"]
-        for s in recent:
-            # Safe access to outcome with type check
-            outcome_str = (s.outcome.upper() if s.outcome and isinstance(s.outcome, str)
-                          else "PENDING")
-
-            # Safe access to confidence with type validation
-            try:
-                confidence = float(s.confidence) if s.confidence is not None else 0.0
-            except (ValueError, TypeError):
-                logger.warning(f"Invalid confidence for signal #{s.id}: {s.confidence}, using 0.0")
-                confidence = 0.0
-
-            # Build regime/time window info if available
-            regime_str = f" Regime={s.regime}" if s.regime else ""
-            window_str = f" Window={s.time_window}" if s.time_window else ""
-
-            lines.append(
-                f"- #{s.id} {s.direction} | {outcome_str} "
-                f"{regime_str}{window_str} "
-                f"| RSI={s.rsi} ADX={s.adx} MACD_hist={s.macd_histogram} ATR%={s.atr_pct} "
-                f"| conf={confidence:.0%}"
-            )
-
-        stats = repo.get_pattern_stats()
-        if stats:
-            lines.append("\n## Taxa de acerto por padrão (n≥3, sinais resolvidos)")
-            omitted = 0
-            for row in stats:
-                # Safe dictionary access with .get() and defaults
-                direction = row.get("direction", "UNKNOWN")
-                rsi_bucket = row.get("rsi_bucket", "UNKNOWN")
-                adx_bucket = row.get("adx_bucket", "UNKNOWN")
-                regime = row.get("regime", "UNKNOWN")
-                time_window = row.get("time_window", "UNKNOWN")
-                total = row.get("total", 0)
-                wins = row.get("wins", 0)
-                win_rate = row.get("win_rate", 0.0)
-
-                # Validate numeric values
-                try:
-                    total = int(total) if total is not None else 0
-                    wins = int(wins) if wins is not None else 0
-                    win_rate = float(win_rate) if win_rate is not None else 0.0
-                except (ValueError, TypeError):
-                    logger.warning(
-                        f"Invalid stats row (direction={direction}, rsi_bucket={rsi_bucket}), skipping"
-                    )
-                    continue
-
-                # Skip patterns with insufficient sample size
-                if total < 3:
-                    omitted += 1
-                    continue
-
-                quality = "favorável" if win_rate >= 0.6 else ("desfavorável" if win_rate < 0.4 else "neutro")
-                lines.append(
-                    f"- {direction} | RSI={rsi_bucket} ADX={adx_bucket} "
-                    f"Regime={regime} Win={time_window}: "
-                    f"{wins}/{total} acertos ({win_rate:.0%}) — {quality}"
+        cycles = await mem.get_recent_cycles(session, limit=5)
+        if cycles:
+            cycles.reverse()
+            lines = ["## Últimos 5 ciclos (curto prazo)"]
+            for i, c in enumerate(cycles):
+                offset = i - len(cycles)
+                dir_str = c["llm_direction"] or "NONE"
+                conf_str = f"{c['llm_confidence']:.0%}" if c["llm_confidence"] is not None else "-"
+                regime_str = c.get("regime") or "?"
+                window_short = _short_window(c.get("time_window"))
+                if c["emitted"]:
+                    sig_str = f"→ #{c['signal_id']}"
+                elif c.get("skip_reason"):
+                    sig_str = f"({c['skip_reason']})"
+                else:
+                    sig_str = ""
+                line = (
+                    f"{offset:+d} {c['cycle_number']:04d} "
+                    f"{regime_str}/{window_short}  {dir_str:4s} {conf_str:>5s}  {sig_str}"
                 )
+                lines.append(line)
+            lines.append(f"  0 (ciclo atual)")
+            parts.append("\n".join(lines))
 
-            if omitted:
-                lines.append(f"({omitted} padrão(ns) com n<5 omitido(s) — sem significância estatística)")
+        lessons = await mem.get_active_lessons(session, limit=5)
+        if lessons:
+            lines = ["## Lições aprendidas (top 5 ativas)"]
+            for l in lessons:
+                lines.append(f"- {l['content']}")
+            parts.append("\n".join(lines))
 
-        return "\n".join(lines)
+        stats = await repo.get_pattern_stats()
+        if stats:
+            rows = [r for r in stats if (r.get("total") or 0) >= 3]
+            if rows:
+                rows.sort(key=lambda r: float(r.get("win_rate") or 0))
+                top_losses = rows[:3]
+                top_wins = [r for r in rows if (r.get("win_rate") or 0) >= 0.6][-3:]
+                interesting = top_losses + top_wins
+
+                lines = ["## Stats por padrão (resumo — top extremos)"]
+                seen = set()
+                for row in interesting:
+                    key = (
+                        row.get("direction", ""),
+                        row.get("rsi_bucket", ""),
+                        row.get("adx_bucket", ""),
+                        row.get("regime", ""),
+                        row.get("time_window", ""),
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    total = int(row.get("total") or 0)
+                    wins = int(row.get("wins") or 0)
+                    wr = float(row.get("win_rate") or 0)
+                    quality = (
+                        "favorável" if wr >= 0.6 else ("desfavorável" if wr < 0.4 else "neutro")
+                    )
+                    lines.append(
+                        f"- {row.get('direction', '?')} | RSI={row.get('rsi_bucket', '?')} "
+                        f"ADX={row.get('adx_bucket', '?')} Regime={row.get('regime', '?')} "
+                        f"Win={row.get('time_window', '?')}: "
+                        f"{wins}/{total} ({wr:.0%}) — {quality}"
+                    )
+                parts.append("\n".join(lines))
+
+        return "\n\n".join(parts)
 
     except Exception as e:
-        logger.error(f"Failed to build learning context block: {e}")
-        return ""  # Return empty string on any unexpected error
+        logger.error(f"Failed to build memory context block: {e}")
+        return ""
+
+
+def _short_window(window: str | None) -> str:
+    if not window:
+        return "?"
+    window = window.lower()
+    for label, key in [
+        ("EU", "europe"), ("US", "us_overlap"), ("LU", "late_us"),
+        ("AS", "asia"), ("MD", "midday"),
+    ]:
+        if key in window:
+            return label
+    return "OT"

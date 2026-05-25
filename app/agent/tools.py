@@ -1,5 +1,6 @@
 from app.indicators.technical import analyze
 from app.signals.repository import SignalRepository
+from app.agent import memory_repository as mem
 
 TOOLS = [
     {
@@ -162,17 +163,61 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_lessons",
+            "description": (
+                "Busca lições aprendidas pelo agente sobre um tópico específico. "
+                "As lições são destiladas periodicamente pela reflexão de memória de longo prazo. "
+                "Use para entender padrões já identificados pelo sistema (ex: 'regime:RANGE', 'direction:CALL')."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "Prefixo do tópico para buscar (ex: 'regime:RANGE', 'direction:CALL', 'window:late_us').",
+                    },
+                },
+                "required": ["topic"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_cycle_detail",
+            "description": (
+                "Retorna o rationale completo e detalhes de um ciclo anterior do agente. "
+                "Use offset negativo para ciclos passados (ex: -1 = ciclo anterior, -3 = 3 ciclos atrás). "
+                "Útil para entender por que uma decisão específica foi tomada."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "offset": {
+                        "type": "integer",
+                        "description": "Offset negativo do ciclo atual (ex: -1, -2, -5). Padrão: -1.",
+                        "default": -1,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
 class ToolDispatcher:
     """Executes tool calls requested by the LLM."""
 
-    def __init__(self, repo: SignalRepository, symbol: str, decision_timeframe: str, context_timeframe: str):
+    def __init__(self, repo: SignalRepository, symbol: str, decision_timeframe: str, context_timeframe: str, session=None):
         self.repo = repo
         self.symbol = symbol
         self.decision_timeframe = decision_timeframe
         self.context_timeframe = context_timeframe
+        self.session = session
         self.emitted_signal: dict | None = None
 
     async def dispatch(self, name: str, args: dict) -> dict:
@@ -184,6 +229,10 @@ class ToolDispatcher:
             return await self._calc_indicator(**args)
         if name == "emit_signal":
             return await self._emit_signal(**args)
+        if name == "query_lessons":
+            return await self._query_lessons(**args)
+        if name == "get_cycle_detail":
+            return await self._get_cycle_detail(**args)
         return {"error": f"Tool desconhecida: {name}"}
 
     async def _query_signal_history(
@@ -324,3 +373,21 @@ class ToolDispatcher:
             "raw": "tool",
         }
         return {"ok": True, "received": self.emitted_signal}
+
+    async def _query_lessons(self, topic: str) -> dict:
+        if not self.session:
+            return {"error": "Sessão não disponível para consultar lições."}
+        lessons = await mem.query_lessons_by_topic(self.session, topic, limit=10)
+        return {"count": len(lessons), "lessons": lessons}
+
+    async def _get_cycle_detail(self, offset: int = -1) -> dict:
+        if not self.session:
+            return {"error": "Sessão não disponível para consultar ciclo."}
+        if offset >= 0:
+            return {"error": "Use offset negativo (ex: -1 para o ciclo anterior)."}
+        limit = abs(offset)
+        cycles = await mem.get_recent_cycles(self.session, limit=limit)
+        if not cycles or abs(offset) > len(cycles):
+            return {"error": f"Não há ciclo no offset {offset}. Total disponíveis: {len(cycles)}"}
+        target = cycles[abs(offset) - 1]
+        return {"cycle": target}

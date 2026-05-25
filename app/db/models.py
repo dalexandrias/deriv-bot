@@ -106,3 +106,59 @@ class Signal(Base):
 
     def __repr__(self) -> str:
         return f"<Signal(id={self.id}, symbol='{self.symbol}', direction='{self.direction}', status='{self.status}')>"
+
+
+class AgentCycle(Base):
+    __tablename__ = "agent_cycle"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cycle_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    symbol: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    regime: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    m15_bias: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    time_window: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    confluence_call: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    confluence_put: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    llm_direction: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    llm_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    llm_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    llm_raw_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    emitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    signal_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    skip_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<AgentCycle(id={self.id}, cycle={self.cycle_number}, dir={self.llm_direction})>"
+
+
+class AgentLesson(Base):
+    __tablename__ = "agent_lesson"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    topic: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    sample_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    last_reinforced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reflection_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<AgentLesson(id={self.id}, topic='{self.topic}', active={self.is_active})>"
+
+
+class AgentReflection(Base):
+    __tablename__ = "agent_reflection"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    cycles_analyzed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    model_used: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    trigger: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    raw_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<AgentReflection(id={self.id}, trigger={self.trigger})>"

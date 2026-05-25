@@ -18,6 +18,8 @@ from app.agent.pre_analysis import run_pre_analysis
 from app.agent.prompts import build_system_prompt, build_user_context
 from app.agent.tools import TOOLS, ToolDispatcher
 from app.agent.learning import build_context_block
+from app.agent.memory_repository import insert_cycle as log_cycle
+from app.agent.memory_models import CycleCreate
 from app.events.protocol import EventType
 from app.events.publisher import publish
 from app.config import settings
@@ -41,7 +43,6 @@ class AgentService:
         self._last_cycle: datetime | None = None
         self._start_time: datetime | None = None
         self._cycle_count: int = 0
-        self._active_verifiers: dict[int, asyncio.Task] = {}
 
     async def start(self) -> None:
         self._running = True
@@ -93,28 +94,7 @@ class AgentService:
         return result.scalars().all()
 
     async def _recover_pending_signals(self, repo: SignalRepository, session, config: dict) -> None:
-        from app.signals.verifier import resolve
-
-        expired = await repo.get_pending_expired()
-        for sig in expired:
-            await repo.mark_error(sig.id)
-            publish(EventType.SIGNAL_RESOLVED, {"id": sig.id, "status": "error"})
-            logger.warning(f"Sinal #{sig.id} expirado sem resolução → marcado como erro")
-        if expired:
-            await session.commit()
-
-        alive = await repo.get_pending_alive()
-        settle_delay = int(config.get("candle_settle_delay", 2))
-        for sig in alive:
-            if sig.id not in self._active_verifiers:
-                task = asyncio.create_task(resolve(
-                    self.client, self.session_factory, sig.id, sig.direction,
-                    sig.symbol, sig.timeframe, sig.entry_candle_time,
-                    settle_delay=settle_delay,
-                ))
-                self._active_verifiers[sig.id] = task
-                task.add_done_callback(lambda _, sid=sig.id: self._active_verifiers.pop(sid, None))
-                logger.info(f"Sinal #{sig.id} recuperado → verifier re-iniciado")
+        pass
 
     async def _loop(self) -> None:
         while self._running:
@@ -233,20 +213,42 @@ class AgentService:
                             "entry_candle_time": market_data.get("next_entry_time"),
                             "duration": int(config.get("duration", 300)),
                         })
-                        from app.signals.verifier import resolve
-                        _v_task = asyncio.create_task(resolve(
-                            self.client, self.session_factory, signal_id, direction,
-                            symbol, decision_tf,
-                            market_data.get("next_entry_time"),
-                            settle_delay=int(config.get("candle_settle_delay", 2)),
-                        ))
-                        self._active_verifiers[signal_id] = _v_task
-                        _v_task.add_done_callback(
-                            lambda _, sid=signal_id: self._active_verifiers.pop(sid, None)
-                        )
                     else:
                         signal_status = f"NÃO EMITIDO (conf={confidence:.0%} < mín={min_confidence:.0%})"
                         publish(EventType.STATUS, {"status": "idle", "detail": f"Confiança insuficiente: {confidence:.0%}"})
+
+                    rationale = result.get("rationale") or ""
+                    raw_response = result.get("raw_response", "")
+                    skip_reason = None
+                    if direction == "WAIT":
+                        skip_reason = "WAIT"
+                    elif not signal_id:
+                        skip_reason = "below_min_confidence"
+
+                    cycle_data = CycleCreate(
+                        cycle_number=cycle_id,
+                        symbol=symbol,
+                        regime=pre.get("regime"),
+                        m15_bias=pre.get("m15_bias", {}).get("bias"),
+                        time_window=pre.get("time_window", {}).get("window"),
+                        confluence_call=pre.get("confluence", {}).get("call_signals", 0),
+                        confluence_put=pre.get("confluence", {}).get("put_signals", 0),
+                        llm_direction=direction,
+                        llm_confidence=confidence,
+                        llm_rationale=rationale,
+                        llm_raw_response=raw_response,
+                        emitted=signal_id is not None,
+                        signal_id=signal_id,
+                        skip_reason=skip_reason,
+                    )
+                    logged_cycle_id = await log_cycle(session, cycle_data)
+                    await session.commit()
+                    publish(EventType.CYCLE_LOGGED, {
+                        "cycle_id": logged_cycle_id,
+                        "direction": direction,
+                        "confidence": confidence,
+                        "emitted": signal_id is not None,
+                    })
 
                 cycle_elapsed = (datetime.now(BRT) - cycle_start).total_seconds()
                 self._last_cycle = datetime.now(timezone.utc)
@@ -324,8 +326,13 @@ class AgentService:
         user_msg = build_user_context(config, market_data["m5_indicators"],
             market_data["m15_indicators"], market_data["pre_analysis"],
             market_data.get("last_candle_time", ""), market_data.get("next_entry_time", ""))
+
+        if session is not None:
+            memory_block = await build_context_block(session, repo, config)
+            if memory_block:
+                user_msg += f"\n\n{memory_block}"
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
-        dispatcher = ToolDispatcher(repo, config["symbol"], decision_tf, context_tf)
+        dispatcher = ToolDispatcher(repo, config["symbol"], decision_tf, context_tf, session=session)
         content = ""
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         async with httpx.AsyncClient() as http:
@@ -362,7 +369,9 @@ class AgentService:
                     result = await dispatcher.dispatch(tool_name, args)
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result, ensure_ascii=False)})
                     if tool_name == "emit_signal" and dispatcher.emitted_signal:
-                        return dispatcher.emitted_signal
+                        sig = dispatcher.emitted_signal
+                        sig["raw_response"] = "tool_call"
+                        return sig
                 if turn == MAX_TOOL_TURNS:
                     payload2 = {"model": config["model"], "messages": messages, "tool_choice": {"type": "function", "function": {"name": "emit_signal"}}}
                     try:
@@ -379,7 +388,9 @@ class AgentService:
                                 args = {}
                             result = await dispatcher.dispatch(tc["function"]["name"], args)
                             if dispatcher.emitted_signal:
-                                return dispatcher.emitted_signal
+                                sig = dispatcher.emitted_signal
+                                sig["raw_response"] = "forced_tool_call"
+                                return sig
                     except Exception:
                         pass
                     content = (message2.get("content") or "").strip() if 'message2' in locals() else ""

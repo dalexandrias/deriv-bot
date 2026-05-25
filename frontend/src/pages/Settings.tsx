@@ -92,56 +92,104 @@ function BotTab() {
       label: 'Símbolo',
       description: 'Símbolo do ativo para análise e operações',
       detail: 'Exemplo: R_25, R_50, R_100. Define qual mercado o bot monitora e opera.',
+      group: 'geral',
     },
     {
       key: 'decision_timeframe',
       label: 'Timeframe Decisão',
       description: 'Timeframe principal para análise técnica',
       detail: 'O bot analisa velas deste período para tomar decisões de entrada. Exemplo: 5m, 15m, 1h.',
+      group: 'geral',
     },
     {
       key: 'context_timeframe',
       label: 'Timeframe Contexto',
       description: 'Timeframe secundário para contexto de mercado',
       detail: 'Usado para entender a tendência maior antes de operar no timeframe de decisão. Deve ser maior que o timeframe de decisão.',
+      group: 'geral',
     },
     {
       key: 'loop_interval',
       label: 'Intervalo (s)',
       description: 'Intervalo entre cada ciclo do bot',
       detail: 'Define com que frequência o bot analisa o mercado. Valor menor = mais análises por hora.',
+      group: 'geral',
     },
     {
       key: 'duration',
       label: 'Duração Operação (s)',
       description: 'Duração de cada operação aberta',
       detail: 'Após este tempo em segundos, a posição é encerrada automaticamente.',
+      group: 'geral',
     },
     {
       key: 'min_confidence',
       label: 'Confiança Mínima',
       description: 'Confiança mínima para emitir sinal',
       detail: 'Valor de 0 a 1. Alto (ex: 0.8) = sinais mais seletivos. Baixo (ex: 0.5) = mais operações, menor precisão.',
+      group: 'geral',
     },
     {
       key: 'model',
       label: 'Modelo LLM',
       description: 'Modelo de linguagem para análise e decisão',
       detail: 'Define qual LLM será usado para analisar indicadores e decidir a direção da operação.',
+      group: 'geral',
     },
     {
       key: 'candle_settle_delay',
       label: 'Delay Vela (s)',
       description: 'Tempo de espera após fechamento da vela',
       detail: 'Garante que todos os dados da vela estejam disponíveis antes da análise começar.',
+      group: 'geral',
     },
     {
       key: 'candles_count',
       label: 'Qtd. Velas',
       description: 'Quantidade de velas históricas para análise',
       detail: 'Mais velas = mais contexto, mas mais tokens usados pelo LLM. Valor típico: 60.',
+      group: 'geral',
+    },
+    {
+      key: 'reflection_enabled',
+      label: 'Reflexão Ativa',
+      description: 'Ativar reflexão automática de memória',
+      detail: 'Liga/desliga o serviço que periodicamente analisa ciclos passados e destila lições acionáveis.',
+      group: 'memoria',
+      type: 'toggle',
+    },
+    {
+      key: 'reflection_model',
+      label: 'Modelo Reflexão',
+      description: 'Modelo LLM usado na reflexão',
+      detail: 'Modelo exclusivo para reflexão. Pode ser diferente do modelo trader. Se vazio, usa o mesmo modelo.',
+      group: 'memoria',
+    },
+    {
+      key: 'reflection_n_cycles',
+      label: 'Ciclos p/ Reflexão',
+      description: 'Ciclos novos para disparar reflexão',
+      detail: 'Número de ciclos acumulados desde a última reflexão para disparar uma nova automaticamente. Padrão: 50.',
+      group: 'memoria',
+    },
+    {
+      key: 'reflection_max_hours',
+      label: 'Máx. Horas s/ Reflexão',
+      description: 'Tempo máximo entre reflexões',
+      detail: 'Dispara reflexão se passar este tempo desde a última, independente do número de ciclos. Padrão: 24h.',
+      group: 'memoria',
+    },
+    {
+      key: 'reflection_lessons_max',
+      label: 'Máx. Lições por Reflexão',
+      description: 'Limite de lições extraídas',
+      detail: 'Número máximo de lições destiladas por ciclo de reflexão. Padrão: 10.',
+      group: 'memoria',
     },
   ]
+
+  const geralFields = fields.filter((f) => f.group === 'geral')
+  const memoriaFields = fields.filter((f) => f.group === 'memoria')
 
   return (
     <div className="space-y-6">
@@ -176,9 +224,9 @@ function BotTab() {
 
       {/* Config form */}
       <div className="bg-lumen-surface border border-lumen-border rounded-lumen p-5 shadow-lumen">
-        <h2 className="text-xs tracking-[0.08em] uppercase text-lumen-muted font-medium mb-4">Parâmetros</h2>
+        <h2 className="text-xs tracking-[0.08em] uppercase text-lumen-muted font-medium mb-4">Parâmetros Gerais</h2>
         <div className="grid grid-cols-2 gap-4">
-          {fields.map(({ key, label, description, detail }) => (
+          {geralFields.map(({ key, label, description, detail }) => (
             <div key={key}>
               <div className="flex items-center mb-1">
                 <label className="block text-xs text-lumen-muted">{label}</label>
@@ -190,6 +238,48 @@ function BotTab() {
                 value={form[key] ?? String(dirty[key] ?? '')}
                 onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
               />
+            </div>
+          ))}
+        </div>
+
+        <h2 className="text-xs tracking-[0.08em] uppercase text-lumen-muted font-medium mb-4 mt-6 pt-5 border-t border-lumen-border">Memória & Reflexão</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {memoriaFields.map(({ key, label, description, detail, type }) => (
+            <div key={key}>
+              <div className="flex items-center mb-1">
+                <label className="block text-xs text-lumen-muted">{label}</label>
+                <ParamHelp title={description} description={detail} />
+              </div>
+              {type === 'toggle' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = form[key] ?? String(dirty[key] ?? 'true')
+                    const next = current === 'true' ? 'false' : 'true'
+                    setForm((f) => ({ ...f, [key]: next }))
+                  }}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${
+                    (form[key] ?? String(dirty[key] ?? 'true')) === 'true'
+                      ? 'bg-lumen-primary'
+                      : 'bg-lumen-border-strong'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow-lumen-sm ${
+                      (form[key] ?? String(dirty[key] ?? 'true')) === 'true'
+                        ? 'translate-x-5'
+                        : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              ) : (
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 text-sm font-mono border border-lumen-border rounded-lumen-sm bg-lumen-bg text-lumen-text placeholder:text-lumen-faint focus:outline-none focus:ring-2 focus:ring-lumen-primary focus:border-lumen-primary hover:border-lumen-border-strong transition-colors"
+                  value={form[key] ?? String(dirty[key] ?? '')}
+                  onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                />
+              )}
             </div>
           ))}
         </div>

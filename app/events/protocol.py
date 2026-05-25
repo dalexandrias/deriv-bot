@@ -12,6 +12,9 @@ class EventType(str, Enum):
     LLM_RESPONSE = "llm_response"
     ERROR = "error"
     LOG = "log"
+    CANDLE_SAVED = "candle_saved"
+    CYCLE_LOGGED = "cycle_logged"
+    LESSON_LEARNED = "lesson_learned"
 
 
 @dataclass

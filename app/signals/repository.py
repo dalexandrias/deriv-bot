@@ -1,10 +1,12 @@
+import time
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import Integer, select, func, and_, cast
+from sqlalchemy import Integer, select, func, and_, cast, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Signal as SignalORM, Candle as CandleORM
 from app.signals.models import SignalCreate
+from app.collector.deriv_client import TIMEFRAME_TO_GRANULARITY
 
 
 class SignalRepository:
@@ -91,6 +93,12 @@ class SignalRepository:
 
     # ---------------------------------------------------------------- queries
 
+    async def get_all_pending(self) -> list[SignalORM]:
+        result = await self.session.execute(
+            select(SignalORM).where(SignalORM.status == "pending")
+        )
+        return list(result.scalars().all())
+
     async def get_pending_alive(self) -> list[SignalORM]:
         elapsed = cast(func.extract('epoch', func.now() - SignalORM.created_at), Integer)
         result = await self.session.execute(
@@ -166,6 +174,88 @@ class SignalRepository:
         )
         return [_orm_to_dict(s) for s in result.scalars().all()]
 
+    async def get_pattern_stats(self) -> list[dict]:
+        rsi_bucket = case(
+            (SignalORM.rsi < 30, 'under'),
+            (SignalORM.rsi < 45, 'low'),
+            (SignalORM.rsi < 55, 'mid'),
+            (SignalORM.rsi < 70, 'high'),
+            else_='over',
+        )
+        adx_bucket = case(
+            (SignalORM.adx < 20, 'weak'),
+            (SignalORM.adx < 30, 'moderate'),
+            else_='strong',
+        )
+        regime = func.coalesce(SignalORM.regime, 'unknown')
+        time_window = func.coalesce(SignalORM.time_window, 'unknown')
+
+        stmt = (
+            select(
+                SignalORM.direction,
+                rsi_bucket.label("rsi_bucket"),
+                adx_bucket.label("adx_bucket"),
+                regime.label("regime"),
+                time_window.label("time_window"),
+                func.count(SignalORM.id).label("total"),
+                func.sum(func.cast(SignalORM.outcome == "win", Integer)).label("wins"),
+                func.coalesce(
+                    func.sum(func.cast(SignalORM.outcome == "win", Integer)) / func.nullif(func.count(SignalORM.id), 0),
+                    0,
+                ).label("win_rate"),
+            )
+            .where(SignalORM.status == "resolved")
+            .group_by(
+                SignalORM.direction,
+                rsi_bucket,
+                adx_bucket,
+                regime,
+                time_window,
+            )
+            .having(func.count(SignalORM.id) >= 3)
+            .order_by(func.count(SignalORM.id).desc())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            {
+                "direction": row.direction,
+                "rsi_bucket": row.rsi_bucket,
+                "adx_bucket": row.adx_bucket,
+                "regime": row.regime,
+                "time_window": row.time_window,
+                "total": row.total,
+                "wins": row.wins,
+                "win_rate": round(float(row.win_rate), 2),
+            }
+            for row in result.all()
+        ]
+
+    async def get_pending_for_candle(
+        self,
+        symbol: str,
+        timeframe: str,
+        epoch: int,
+    ) -> list[SignalORM]:
+        result = await self.session.execute(
+            select(SignalORM).where(
+                and_(
+                    SignalORM.symbol == symbol,
+                    SignalORM.timeframe == timeframe,
+                    SignalORM.status == "pending",
+                )
+            )
+        )
+        signals = list(result.scalars().all())
+        matched = []
+        for sig in signals:
+            if sig.entry_candle_time:
+                sig_epoch = int(
+                    datetime.fromisoformat(sig.entry_candle_time.replace('Z', '+00:00')).timestamp()
+                )
+                if sig_epoch == epoch:
+                    matched.append(sig)
+        return matched
+
     # -------------------------------------------------------------- candles
 
     async def get_candles_range(
@@ -197,8 +287,11 @@ class SignalRepository:
         symbol: str,
         timeframe: str,
     ) -> None:
+        granularity = TIMEFRAME_TO_GRANULARITY.get(timeframe, 300)
+        now = time.time()
         for c in candles:
             epoch = c["time"]
+            is_closed = (epoch + granularity) <= now
             result = await self.session.execute(
                 select(CandleORM).where(
                     CandleORM.symbol == symbol,
@@ -208,10 +301,11 @@ class SignalRepository:
             )
             existing = result.scalar_one_or_none()
             if existing is not None:
-                existing.open = c["open"]
-                existing.high = c["high"]
-                existing.low = c["low"]
-                existing.close = c["close"]
+                if is_closed:
+                    existing.open = c["open"]
+                    existing.high = c["high"]
+                    existing.low = c["low"]
+                    existing.close = c["close"]
             else:
                 self.session.add(
                     CandleORM(

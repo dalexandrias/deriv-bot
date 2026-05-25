@@ -22,6 +22,11 @@ DEFAULT_BOT_CONFIG = {
     "model": "deepseek/deepseek-v4-flash",
     "candle_settle_delay": 2,
     "candles_count": 60,
+    "reflection_enabled": True,
+    "reflection_model": "deepseek/deepseek-v4-flash",
+    "reflection_n_cycles": 50,
+    "reflection_max_hours": 24,
+    "reflection_lessons_max": 10,
 }
 
 DEFAULT_INDICATORS = [
