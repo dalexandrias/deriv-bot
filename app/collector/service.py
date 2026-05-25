@@ -1,15 +1,18 @@
 import asyncio
 import time
 from loguru import logger
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.collector.deriv_client import DerivClient, TIMEFRAME_TO_GRANULARITY
+from app.events.protocol import EventType
+from app.events.publisher import publish
 from app.signals.repository import SignalRepository
 
 
 class CollectorService:
-    def __init__(self, client: DerivClient, repo: SignalRepository):
+    def __init__(self, client: DerivClient, session_factory: async_sessionmaker):
         self.client = client
-        self.repo = repo
+        self.session_factory = session_factory
         self._running = False
         self._task: asyncio.Task | None = None
         self.symbols: list[str] = []
@@ -41,26 +44,46 @@ class CollectorService:
     def is_running(self) -> bool:
         return self._running
 
+    SETTLE_DELAY = 3  # seconds after candle close before reading price
+
     async def _loop(self) -> None:
         while self._running:
             try:
                 await self.client.ensure_connected()
-                for symbol in self.symbols:
-                    for tf in self.timeframes:
-                        try:
-                            candles = await self.client.get_candles(symbol, tf, count=5)
-                            await self.repo.upsert_candles(candles, symbol, tf)
-                            await self.repo.session.commit()
-                            logger.success(f"Candles salvas | {symbol}/{tf} | {len(candles)} candles | último epoch={candles[-1]['time'] if candles else '-'}")
-                        except Exception as e:
-                            logger.error(f"Erro ao coletar {symbol}/{tf}: {e}")
-                            await self.repo.session.rollback()
+                now = time.time()
+                async with self.session_factory() as session:
+                    repo = SignalRepository(session)
+                    for symbol in self.symbols:
+                        for tf in self.timeframes:
+                            try:
+                                candles = await self.client.get_candles(symbol, tf, count=5)
+                                await repo.upsert_candles(candles, symbol, tf)
+                                await session.commit()
+                                logger.success(f"Candles salvas | {symbol}/{tf} | {len(candles)} candles | último epoch={candles[-1]['time'] if candles else '-'}")
 
-                # Wait until next candle close
+                                granularity = TIMEFRAME_TO_GRANULARITY.get(tf, 300)
+                                for c in candles:
+                                    epoch = c["time"]
+                                    # Only publish if candle closed at least SETTLE_DELAY seconds ago
+                                    if (epoch + granularity + self.SETTLE_DELAY) <= now:
+                                        publish(EventType.CANDLE_SAVED, {
+                                            "symbol": symbol,
+                                            "timeframe": tf,
+                                            "epoch": epoch,
+                                            "open": c["open"],
+                                            "high": c["high"],
+                                            "low": c["low"],
+                                            "close": c["close"],
+                                        })
+                            except Exception as e:
+                                logger.error(f"Erro ao coletar {symbol}/{tf}: {e}")
+                                await session.rollback()
+
+                # Wait until next candle close + settle
                 granularity = TIMEFRAME_TO_GRANULARITY.get(self.timeframes[0] if self.timeframes else "5m", 300)
                 now = time.time()
                 next_close = (int(now / granularity) + 1) * granularity
-                wait_secs = next_close - now
+                wait_secs = next_close - now + self.SETTLE_DELAY
                 await asyncio.sleep(wait_secs)
             except asyncio.CancelledError:
                 return
