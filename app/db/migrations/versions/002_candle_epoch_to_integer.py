@@ -22,7 +22,7 @@ def upgrade() -> None:
         'candle',
         'epoch',
         type_=sa.Integer(),
-        postgresql_using='EXTRACT(EPOCH FROM epoch)::INTEGER',
+        postgresql_using='CASE WHEN epoch::text ~ \'^\d+$\' THEN CAST(epoch AS INTEGER) ELSE EXTRACT(EPOCH FROM epoch)::INTEGER END',
     )
 
 
